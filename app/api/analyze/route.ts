@@ -171,7 +171,7 @@ LAST 10 VIDEOS:
 ${videoList}
 
 Study the title patterns and return:
-{"topics":["topic1","topic2","topic3","topic4"],"titleFormula":"the recurring pattern e.g. I [extreme verb] [thing] for [duration]","hookWords":["word1","word2","word3"],"channelStyle":"specific tone, energy, format description","targetAudience":"specific audience","contentFormat":"specific format e.g. high-budget challenge videos"}`);
+{"topics":["topic1","topic2","topic3","topic4"],"titleFormula":"the recurring pattern e.g. educational explainer on X topic","hookWords":["word1","word2","word3"],"channelStyle":"specific tone, energy, format description","targetAudience":"describe audience by interest and language — do NOT assume their country unless it is explicitly stated in the channel description","contentFormat":"specific format e.g. short educational health tip videos in Urdu"}`);
   const parsed = parseJSON(text);
   if (parsed?.topics) return { ...parsed, news: [] };
   return { topics:[channelName], titleFormula:'', hookWords:[], channelStyle:'N/A', targetAudience:'General', contentFormat:'YouTube videos', news:[] };
@@ -211,6 +211,7 @@ Rules:
 - Title MUST sound exactly like this creator — same formula, same energy, same length
 - Each idea MUST reference a specific [NEWS X] or [REDDIT X] item
 - Be SPECIFIC: what exactly happens, what is the hook, what is the twist
+- Do NOT assume or mention any specific country unless the channel explicitly targets one — focus on the language community and topic, not geography
 - Think: what would make someone stop scrolling and click?
 
 Return ONLY this JSON:
@@ -237,10 +238,10 @@ export async function POST(req: NextRequest) {
     const channelId = await resolveChannelId(parsed);
     const channelData = await fetchChannelData(channelId);
 
-    const [analysis, reddit] = await Promise.all([
-      analyzeChannel(channelData.channelName, channelData.channelDescription, channelData.videos),
-      fetchReddit(channelData.channelName),
-    ]);
+    const analysis = await analyzeChannel(channelData.channelName, channelData.channelDescription, channelData.videos);
+    // Search Reddit by topic, not channel name — avoids unrelated country-level results
+    const redditQuery = analysis.topics.slice(0, 2).join(' ') || channelData.channelName;
+    const reddit = await fetchReddit(redditQuery);
 
     const news = await fetchNews(channelData.channelName, analysis.topics);
     analysis.news = news;
