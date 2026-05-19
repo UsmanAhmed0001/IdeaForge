@@ -36,6 +36,11 @@ interface VideoIdea {
   videoIdea: string;
 }
 
+interface InstagramIdea { id: number; reelHook: string; caption: string; hashtags: string; visualDirection: string; trendConnection: string; }
+interface LinkedInIdea { id: number; headline: string; postBody: string; cta: string; trendConnection: string; }
+interface FacebookIdea { id: number; postTitle: string; postBody: string; engagementQuestion: string; trendConnection: string; }
+interface TikTokIdea { id: number; hook: string; concept: string; audioSuggestion: string; trendConnection: string; }
+
 interface AnalysisResult {
   channel: {
     channelName: string;
@@ -54,7 +59,25 @@ interface AnalysisResult {
   };
   redditPosts: RedditPost[];
   ideas: VideoIdea[];
+  platforms?: {
+    instagram: InstagramIdea[];
+    linkedin: LinkedInIdea[];
+    facebook: FacebookIdea[];
+    tiktok: TikTokIdea[];
+  };
 }
+
+// ─── Platform tabs ────────────────────────────────────────────────────────────
+
+const PLATFORMS = [
+  { id: 'youtube', label: 'YouTube', icon: '▶' },
+  { id: 'instagram', label: 'Instagram', icon: '◈' },
+  { id: 'linkedin', label: 'LinkedIn', icon: '◆' },
+  { id: 'facebook', label: 'Facebook', icon: '◉' },
+  { id: 'tiktok', label: 'TikTok', icon: '◇' },
+] as const;
+
+type PlatformId = typeof PLATFORMS[number]['id'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -308,6 +331,7 @@ function Ticker() {
 // ─── Results ──────────────────────────────────────────────────────────────────
 
 function ResultsView({ result, onReset }: { result: AnalysisResult; onReset: () => void }) {
+  const [activePlatform, setActivePlatform] = React.useState<PlatformId>('youtube');
   const r = result.analysis;
 
   return (
@@ -425,49 +449,242 @@ function ResultsView({ result, onReset }: { result: AnalysisResult; onReset: () 
         </div>
       </div>
 
-      {/* Video ideas */}
+      {/* Platform tabs + ideas */}
       <div className="ideas-section">
         <div className="ideas-hd">
-          <div className="ideas-ey">◈ AI-Generated · Trend-Informed · Channel-Matched</div>
-          <div className="ideas-big">5 VIDEO<br />IDEAS</div>
+          <div className="ideas-ey">◈ AI-Generated · Trend-Informed · Multi-Platform</div>
+          <div className="ideas-big">CONTENT<br />PACK</div>
         </div>
 
-        {result.ideas.length === 0 && (
+        {/* Platform tab bar */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 32, borderBottom: '0.5px solid var(--border)', paddingBottom: 0 }}>
+          {PLATFORMS.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setActivePlatform(p.id)}
+              style={{
+                padding: '8px 18px',
+                fontSize: 11,
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.08em',
+                fontWeight: activePlatform === p.id ? 500 : 400,
+                color: activePlatform === p.id ? 'var(--text)' : 'var(--text-muted)',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: activePlatform === p.id ? '2px solid var(--accent)' : '2px solid transparent',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                transition: 'all 0.15s',
+                marginBottom: -1,
+              }}
+            >
+              {p.icon} {p.label.toUpperCase()}
+              {p.id !== 'youtube' && result.platforms && (
+                <span style={{ fontSize: 9, padding: '1px 5px', background: 'var(--accent)', color: '#000', borderRadius: 999, marginLeft: 2, fontWeight: 500 }}>NEW</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* YouTube tab */}
+        {activePlatform === 'youtube' && result.ideas.length === 0 && (
           <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>
             No ideas generated — try analysing again.
           </p>
         )}
-
-        {result.ideas.map((idea, i) => (
-          <div key={idea.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
-            <IdeaThumbnail idea={idea} />
-            <div className="idea-body">
-              <div className="idea-num-col">
-                <span className="idea-num">0{idea.id}</span>
-                <span className="idea-num-label">Concept</span>
-              </div>
-              <div className="idea-content">
-                <h3 className="idea-title">{idea.title}</h3>
-                <div className="idea-fields">
-                  <div>
-                    <div className="idea-fl">Video Concept</div>
-                    <p className="idea-fd">{idea.videoIdea}</p>
+        {activePlatform === 'youtube' && result.ideas.length > 0 && (
+          <>
+            {result.ideas.map((idea, i) => (
+              <div key={idea.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
+                <IdeaThumbnail idea={idea} />
+                <div className="idea-body">
+                  <div className="idea-num-col">
+                    <span className="idea-num">0{idea.id}</span>
+                    <span className="idea-num-label">Concept</span>
                   </div>
-                  <div>
-                    <div className="idea-fl">Thumbnail Direction</div>
-                    <p className="idea-fd italic">{idea.thumbnailDesign}</p>
+                  <div className="idea-content">
+                    <h3 className="idea-title">{idea.title}</h3>
+                    <div className="idea-fields">
+                      <div>
+                        <div className="idea-fl">Video Concept</div>
+                        <p className="idea-fd">{idea.videoIdea}</p>
+                      </div>
+                      <div>
+                        <div className="idea-fl">Thumbnail Direction</div>
+                        <p className="idea-fd italic">{idea.thumbnailDesign}</p>
+                      </div>
+                    </div>
+                    {idea.trendConnection && (
+                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                        <div className="idea-fl">Trend Connection</div>
+                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, letterSpacing: '0.02em' }}>{idea.trendConnection}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-                {idea.trendConnection && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-                    <div className="idea-fl">Trend Connection</div>
-                    <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, letterSpacing: '0.02em' }}>{idea.trendConnection}</p>
-                  </div>
-                )}
               </div>
-            </div>
+            ))}
+          </>
+        )}
+
+        {/* Instagram tab */}
+        {activePlatform === 'instagram' && (
+          <div>
+            {!result.platforms?.instagram?.length ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>Instagram content generating...</p>
+            ) : result.platforms.instagram.map((item, i) => (
+              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div style={{ background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)', borderRadius: '8px 8px 0 0', height: 6 }} />
+                <div className="idea-body">
+                  <div className="idea-num-col">
+                    <span className="idea-num">0{item.id}</span>
+                    <span className="idea-num-label">Reel</span>
+                  </div>
+                  <div className="idea-content">
+                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.reelHook}</h3>
+                    <div className="idea-fields">
+                      <div>
+                        <div className="idea-fl">Caption</div>
+                        <p className="idea-fd">{item.caption}</p>
+                      </div>
+                      <div>
+                        <div className="idea-fl">Visual Direction</div>
+                        <p className="idea-fd italic">{item.visualDirection}</p>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <div className="idea-fl">Hashtags</div>
+                      <p style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.8 }}>{item.hashtags}</p>
+                    </div>
+                    {item.trendConnection && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <div className="idea-fl">Trend Connection</div>
+                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
+
+        {/* LinkedIn tab */}
+        {activePlatform === 'linkedin' && (
+          <div>
+            {!result.platforms?.linkedin?.length ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>LinkedIn content generating...</p>
+            ) : result.platforms.linkedin.map((item, i) => (
+              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div style={{ background: '#0077b5', borderRadius: '8px 8px 0 0', height: 6 }} />
+                <div className="idea-body">
+                  <div className="idea-num-col">
+                    <span className="idea-num">0{item.id}</span>
+                    <span className="idea-num-label">Post</span>
+                  </div>
+                  <div className="idea-content">
+                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.headline}</h3>
+                    <div className="idea-fields">
+                      <div>
+                        <div className="idea-fl">Post Body</div>
+                        <p className="idea-fd" style={{ whiteSpace: 'pre-line' }}>{item.postBody}</p>
+                      </div>
+                      <div>
+                        <div className="idea-fl">Call to Action</div>
+                        <p className="idea-fd italic">{item.cta}</p>
+                      </div>
+                    </div>
+                    {item.trendConnection && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <div className="idea-fl">Trend Connection</div>
+                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Facebook tab */}
+        {activePlatform === 'facebook' && (
+          <div>
+            {!result.platforms?.facebook?.length ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>Facebook content generating...</p>
+            ) : result.platforms.facebook.map((item, i) => (
+              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div style={{ background: '#1877f2', borderRadius: '8px 8px 0 0', height: 6 }} />
+                <div className="idea-body">
+                  <div className="idea-num-col">
+                    <span className="idea-num">0{item.id}</span>
+                    <span className="idea-num-label">Post</span>
+                  </div>
+                  <div className="idea-content">
+                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.postTitle}</h3>
+                    <div className="idea-fields">
+                      <div>
+                        <div className="idea-fl">Post Body</div>
+                        <p className="idea-fd" style={{ whiteSpace: 'pre-line' }}>{item.postBody}</p>
+                      </div>
+                      <div>
+                        <div className="idea-fl">Engagement Question</div>
+                        <p className="idea-fd italic">{item.engagementQuestion}</p>
+                      </div>
+                    </div>
+                    {item.trendConnection && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <div className="idea-fl">Trend Connection</div>
+                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* TikTok tab */}
+        {activePlatform === 'tiktok' && (
+          <div>
+            {!result.platforms?.tiktok?.length ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>TikTok content generating...</p>
+            ) : result.platforms.tiktok.map((item, i) => (
+              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div style={{ background: 'linear-gradient(90deg, #010101, #fe2c55)', borderRadius: '8px 8px 0 0', height: 6 }} />
+                <div className="idea-body">
+                  <div className="idea-num-col">
+                    <span className="idea-num">0{item.id}</span>
+                    <span className="idea-num-label">TikTok</span>
+                  </div>
+                  <div className="idea-content">
+                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.hook}</h3>
+                    <div className="idea-fields">
+                      <div>
+                        <div className="idea-fl">Video Concept</div>
+                        <p className="idea-fd">{item.concept}</p>
+                      </div>
+                      <div>
+                        <div className="idea-fl">Audio Direction</div>
+                        <p className="idea-fd italic">{item.audioSuggestion}</p>
+                      </div>
+                    </div>
+                    {item.trendConnection && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <div className="idea-fl">Trend Connection</div>
+                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
       </div>
 
       <div className="reset-wrap">
@@ -513,6 +730,7 @@ export default function Home() {
     addTimer(() => setStep(1), 5000);
     addTimer(() => setStep(2), 12000);
     addTimer(() => setStep(3), 22000);
+    addTimer(() => setStep(4), 35000);
 
     try {
       const res = await fetch('/api/analyze', {
@@ -561,8 +779,8 @@ export default function Home() {
           <div className="hero-eye">Content Intelligence Engine</div>
           <h1 className="hero-title">IDEA<span>FORGE</span></h1>
           <p className="hero-sub">
-            Drop a YouTube channel URL. Get 5 data-informed video ideas — matched to the
-            channel&apos;s style, fuelled by today&apos;s trends and community discussions.
+            Analyse any YouTube channel. Get a full content pack — ideas for YouTube, Instagram,
+            LinkedIn, Facebook and TikTok, all grounded in this week&apos;s real news.
           </p>
           <div className="input-section">
             <label className="input-label" htmlFor="channel-url">Channel Name or URL</label>
@@ -606,7 +824,7 @@ export default function Home() {
 
       {phase !== 'loading' && (
         <footer className="footer">
-          IDEAFORGE · YouTube Data API · Reddit · {new Date().getFullYear()}
+          IDEAFORGE · YouTube · Instagram · LinkedIn · Facebook · TikTok · {new Date().getFullYear()}
         </footer>
       )}
 

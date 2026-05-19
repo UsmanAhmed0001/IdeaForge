@@ -235,6 +235,47 @@ Analyse deeply and return ONLY this JSON:
 
 interface VideoIdea { id: number; title: string; trendConnection: string; thumbnailDesign: string; videoIdea: string; }
 
+// ─── Multi-platform content interfaces ───────────────────────────────────────
+interface InstagramIdea {
+  id: number;
+  reelHook: string;       // Opening 3 seconds — must stop the scroll
+  caption: string;        // Full caption (Instagram voice, max 150 words)
+  hashtags: string;       // 8-12 relevant hashtags
+  visualDirection: string; // What to film/show for the Reel
+  trendConnection: string;
+}
+
+interface LinkedInIdea {
+  id: number;
+  headline: string;       // Opening line (must create curiosity or deliver value)
+  postBody: string;       // Full post (professional tone, 100-200 words)
+  cta: string;            // Call to action / closing question
+  trendConnection: string;
+}
+
+interface FacebookIdea {
+  id: number;
+  postTitle: string;      // Attention-grabbing opener
+  postBody: string;       // Conversational post (warm community tone, 80-150 words)
+  engagementQuestion: string; // Question to drive comments
+  trendConnection: string;
+}
+
+interface TikTokIdea {
+  id: number;
+  hook: string;           // First 2 seconds — most critical on TikTok
+  concept: string;        // What happens in the video
+  audioSuggestion: string; // Trending sound direction or original audio style
+  trendConnection: string;
+}
+
+interface PlatformPack {
+  instagram: InstagramIdea[];
+  linkedin: LinkedInIdea[];
+  facebook: FacebookIdea[];
+  tiktok: TikTokIdea[];
+}
+
 async function generateIdeas(channelName: string, analysis: ChannelAnalysis, videos: Video[], reddit: RedditPost[]): Promise<VideoIdea[]> {
   const videoList = videos.map((v,i) => `${i+1}. "${v.title}"`).join('\n');
   const newsList = analysis.news.length
@@ -282,6 +323,129 @@ Return ONLY this JSON array:
   return [];
 }
 
+// ─── Multi-platform content generator ────────────────────────────────────────
+
+async function generatePlatformContent(
+  channelName: string,
+  analysis: ChannelAnalysis & { titleFormula?: string; hookWords?: string[]; uniqueAngle?: string },
+  videos: Video[],
+  reddit: RedditPost[],
+  youtubeIdeas: VideoIdea[]
+): Promise<PlatformPack> {
+  const today = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const newsList = analysis.news.length
+    ? analysis.news.map((n, i) => `[NEWS ${i+1}] ${n.headline} — ${n.summary}`).join('\n')
+    : 'No live news available.';
+  const redditList = reddit.length
+    ? reddit.map((p, i) => `[REDDIT ${i+1}] r/${p.subreddit} — "${p.title}"`).join('\n')
+    : 'No Reddit data.';
+  const ideaTitles = youtubeIdeas.map((v, i) => `${i+1}. ${v.title}`).join('\n');
+  const recentVideos = videos.slice(0, 5).map((v, i) => `${i+1}. "${v.title}"`).join('\n');
+
+  const context = `CHANNEL: ${channelName}
+NICHE: ${analysis.topics.join(', ')}
+UNIQUE ANGLE: ${analysis.uniqueAngle || 'Covers underrepresented topics the audience cannot find elsewhere'}
+AUDIENCE: ${analysis.targetAudience}
+TODAY: ${today}
+
+THIS WEEK'S NEWS:
+${newsList}
+
+REDDIT DISCUSSIONS:
+${redditList}
+
+YOUTUBE IDEAS ALREADY GENERATED (use same topics, adapted per platform):
+${ideaTitles}
+
+RECENT CHANNEL VIDEOS (do NOT repeat these):
+${recentVideos}`;
+
+  // Run all 4 platforms in parallel
+  const [igText, liText, fbText, ttText] = await Promise.all([
+
+    // Instagram
+    callAI(`You are an Instagram Reels strategist. Today is ${today}.
+
+${context}
+
+Generate 5 Instagram Reel ideas for this channel's niche. Instagram in 2026 rewards RAW, REAL, human content. Hooks must grab attention in 3 seconds.
+
+Rules:
+- reelHook: first 3 seconds of the Reel — shocking stat, bold statement, or question. Under 15 words.
+- caption: Instagram voice (casual, personal, not corporate). Max 120 words. Emojis allowed.
+- hashtags: 8-10 hashtags mixing niche + broad. No spaces in hashtags.
+- visualDirection: exactly what to film — location, angle, what to show on screen
+- trendConnection: which [NEWS X] or [REDDIT X] makes this timely RIGHT NOW
+- Each idea must be different from the others and from recent channel videos
+
+Return ONLY this JSON array:
+[{"id":1,"reelHook":"","caption":"","hashtags":"","visualDirection":"","trendConnection":""},{"id":2,"reelHook":"","caption":"","hashtags":"","visualDirection":"","trendConnection":""},{"id":3,"reelHook":"","caption":"","hashtags":"","visualDirection":"","trendConnection":""},{"id":4,"reelHook":"","caption":"","hashtags":"","visualDirection":"","trendConnection":""},{"id":5,"reelHook":"","caption":"","hashtags":"","visualDirection":"","trendConnection":""}]`),
+
+    // LinkedIn
+    callAI(`You are a LinkedIn content strategist. Today is ${today}.
+
+${context}
+
+Generate 5 LinkedIn posts for this channel's niche. LinkedIn in 2026: professional credibility, thought leadership, educational value. Content is now cited in AI search results. Video posts get 3× more engagement than text.
+
+Rules:
+- headline: first line must stop the scroll — insight, data point, or contrarian take. Under 20 words.
+- postBody: professional but human. Teach something. 100-180 words. Line breaks for readability.
+- cta: end with a question that makes professionals want to comment. Drives genuine conversation.
+- trendConnection: which [NEWS X] or [REDDIT X] makes this relevant to professionals RIGHT NOW
+- Do NOT sound like corporate marketing copy. Sound like a knowledgeable human.
+
+Return ONLY this JSON array:
+[{"id":1,"headline":"","postBody":"","cta":"","trendConnection":""},{"id":2,"headline":"","postBody":"","cta":"","trendConnection":""},{"id":3,"headline":"","postBody":"","cta":"","trendConnection":""},{"id":4,"headline":"","postBody":"","cta":"","trendConnection":""},{"id":5,"headline":"","postBody":"","cta":"","trendConnection":""}]`),
+
+    // Facebook
+    callAI(`You are a Facebook content strategist. Today is ${today}.
+
+${context}
+
+Generate 5 Facebook posts for this channel's niche. Facebook in 2026: community-first, conversational, older demographic (25-45). Meta suppresses duplicate content — this must feel original. Human speech in first 3 seconds of any video boosts reach.
+
+Rules:
+- postTitle: warm, relatable opener. Reads like a friend sharing something they just learned.
+- postBody: community tone. Tell a story or share a useful insight. 80-140 words. Warm, approachable.
+- engagementQuestion: ask a specific question that people in this niche will have an opinion on
+- trendConnection: which [NEWS X] or [REDDIT X] is the timely hook RIGHT NOW
+- Facebook audience is broader age range — accessible language, no jargon
+
+Return ONLY this JSON array:
+[{"id":1,"postTitle":"","postBody":"","engagementQuestion":"","trendConnection":""},{"id":2,"postTitle":"","postBody":"","engagementQuestion":"","trendConnection":""},{"id":3,"postTitle":"","postBody":"","engagementQuestion":"","trendConnection":""},{"id":4,"postTitle":"","postBody":"","engagementQuestion":"","trendConnection":""},{"id":5,"postTitle":"","postBody":"","engagementQuestion":"","trendConnection":""}]`),
+
+    // TikTok
+    callAI(`You are a TikTok content strategist. Today is ${today}.
+
+${context}
+
+Generate 5 TikTok ideas for this channel's niche. TikTok in 2026: first 2 seconds are everything. Pattern interrupts, bold statements, visual hooks. Gen Z discovery platform. 54% of TikTok users research products daily.
+
+Rules:
+- hook: first 2 seconds — the most important line. Must create FOMO or immediate curiosity. Under 12 words.
+- concept: exactly what happens in the video. Specific actions, format, pacing.
+- audioSuggestion: trending audio direction OR original audio style that fits the content
+- trendConnection: which [NEWS X] or [REDDIT X] is the urgent hook
+- TikTok rewards authenticity over polish — raw > perfect
+
+Return ONLY this JSON array:
+[{"id":1,"hook":"","concept":"","audioSuggestion":"","trendConnection":""},{"id":2,"hook":"","concept":"","audioSuggestion":"","trendConnection":""},{"id":3,"hook":"","concept":"","audioSuggestion":"","trendConnection":""},{"id":4,"hook":"","concept":"","audioSuggestion":"","trendConnection":""},{"id":5,"hook":"","concept":"","audioSuggestion":"","trendConnection":""}]`),
+  ]);
+
+  const ig = parseJSON(igText);
+  const li = parseJSON(liText);
+  const fb = parseJSON(fbText);
+  const tt = parseJSON(ttText);
+
+  return {
+    instagram: Array.isArray(ig) ? ig as InstagramIdea[] : [],
+    linkedin: Array.isArray(li) ? li as LinkedInIdea[] : [],
+    facebook: Array.isArray(fb) ? fb as FacebookIdea[] : [],
+    tiktok: Array.isArray(tt) ? tt as TikTokIdea[] : [],
+  };
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -322,12 +486,18 @@ export async function POST(req: NextRequest) {
 
     const ideas = await generateIdeas(channelData.channelName, analysis, channelData.videos, reddit);
 
+    // Generate platform content pack in parallel with ideas already done
+    const platforms = await generatePlatformContent(
+      channelData.channelName, analysis, channelData.videos, reddit, ideas
+    );
+
     return NextResponse.json({
       channel: { channelName: channelData.channelName, channelDescription: channelData.channelDescription, thumbnailUrl: channelData.thumbnailUrl, subscriberCount: channelData.subscriberCount, channelId },
       videos: channelData.videos,
       analysis,
       redditPosts: reddit,
       ideas,
+      platforms,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unexpected error.';
