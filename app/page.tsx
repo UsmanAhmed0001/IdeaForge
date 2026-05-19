@@ -31,6 +31,7 @@ interface RedditPost {
 interface VideoIdea {
   id: number;
   title: string;
+  trendConnection: string;
   thumbnailDesign: string;
   videoIdea: string;
 }
@@ -449,14 +450,20 @@ function ResultsView({ result, onReset }: { result: AnalysisResult; onReset: () 
                 <h3 className="idea-title">{idea.title}</h3>
                 <div className="idea-fields">
                   <div>
-                    <div className="idea-fl">Thumbnail Direction</div>
-                    <p className="idea-fd italic">{idea.thumbnailDesign}</p>
-                  </div>
-                  <div>
                     <div className="idea-fl">Video Concept</div>
                     <p className="idea-fd">{idea.videoIdea}</p>
                   </div>
+                  <div>
+                    <div className="idea-fl">Thumbnail Direction</div>
+                    <p className="idea-fd italic">{idea.thumbnailDesign}</p>
+                  </div>
                 </div>
+                {idea.trendConnection && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <div className="idea-fl">Trend Connection</div>
+                    <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, letterSpacing: '0.02em' }}>{idea.trendConnection}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

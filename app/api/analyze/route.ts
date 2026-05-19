@@ -244,73 +244,106 @@ async function analyzeChannel(
   channelName: string,
   channelDescription: string,
   videos: Video[]
-): Promise<ChannelAnalysis> {
+): Promise<ChannelAnalysis & { titleFormula: string; hookWords: string[] }> {
   const videoList = videos
-    .map((v, i) => `${i + 1}. "${v.title}" — ${new Date(v.publishedAt).toLocaleDateString('en-GB')}`)
+    .map((v, i) => `${i + 1}. "${v.title}"`)
     .join('\n');
 
   const text = await callAI(
-    `Analyse this YouTube channel. Return ONLY valid JSON, no markdown.
+    `You are a YouTube analytics expert. Deeply analyse this channel.
 
 CHANNEL: "${channelName}"
 DESCRIPTION: ${channelDescription || '(none)'}
 
-LAST 10 VIDEOS:
+LAST 10 VIDEOS (study the title patterns carefully):
 ${videoList}
 
-Return exactly this JSON (no news field):
-{"topics":["topic1","topic2","topic3","topic4"],"channelStyle":"tone and energy of content","targetAudience":"who watches this channel","contentFormat":"e.g. challenge videos, vlogs, product reviews"}`
+Analyse the title formula — what pattern do they consistently use?
+Examples of formulas:
+- MrBeast style: "I [extreme action] for [time/number]" or "$X vs $X" or "Last To [action] Wins $X"
+- Tech reviewer style: "The [product] that [surprising claim]" or "Why I [switched/quit/chose] [product]"
+- Commentary style: "[Creator] just [action] and it's [reaction]"
+
+Return ONLY valid JSON, no markdown:
+{
+  "topics": ["specific niche topic 1", "specific niche topic 2", "specific niche topic 3", "specific niche topic 4"],
+  "titleFormula": "describe the exact recurring title pattern with examples from their videos",
+  "hookWords": ["power words they use repeatedly"],
+  "channelStyle": "specific description: energy level, tone, pacing, production style, what makes it unique",
+  "targetAudience": "specific demographic and psychographic description",
+  "contentFormat": "specific format description e.g. high-budget outdoor challenges with prize reveals, or talking-head tech reviews with b-roll"
+}`
   );
 
-  const parsed = parseJSON(text) as ChannelAnalysis;
+  const parsed = parseJSON(text);
   if (parsed?.topics) return { ...parsed, news: [] };
-  return { topics: [channelName], channelStyle: 'N/A', targetAudience: 'General', contentFormat: 'YouTube videos', news: [] };
+  return { topics: [channelName], titleFormula: '', hookWords: [], channelStyle: 'N/A', targetAudience: 'General', contentFormat: 'YouTube videos', news: [] };
 }
 
 // ─── Idea generation ──────────────────────────────────────────────────────────
 
-interface VideoIdea { id: number; title: string; thumbnailDesign: string; videoIdea: string; }
+interface VideoIdea { id: number; title: string; trendConnection: string; thumbnailDesign: string; videoIdea: string; }
 
 async function generateVideoIdeas(
   channelName: string,
-  analysis: ChannelAnalysis,
+  analysis: ChannelAnalysis & { titleFormula?: string; hookWords?: string[] },
   videos: Video[],
   redditPosts: RedditPost[]
 ): Promise<VideoIdea[]> {
   const videoList = videos.map((v, i) => `${i + 1}. "${v.title}"`).join('\n');
   const newsList = analysis.news.length
-    ? analysis.news.map(n => `• ${n.headline}: ${n.summary}`).join('\n')
-    : 'No news data.';
+    ? analysis.news.map((n, i) => `[NEWS ${i+1}] ${n.headline}\n   → ${n.summary}`).join('\n')
+    : 'No live news available.';
   const redditList = redditPosts.length
-    ? redditPosts.map(p => `• r/${p.subreddit} | ${p.score} upvotes | "${p.title}"`).join('\n')
-    : 'No Reddit data.';
+    ? redditPosts.map((p, i) => `[REDDIT ${i+1}] r/${p.subreddit} (↑${p.score}) — "${p.title}"`).join('\n')
+    : 'No Reddit posts found.';
+  const hookWords = analysis.hookWords?.join(', ') || '';
+  const titleFormula = analysis.titleFormula || '';
 
   const text = await callAI(
-    `Generate 5 outstanding YouTube video ideas for this channel.
+    `You are the world's best YouTube content strategist with a track record of 100M+ view videos. You understand viral mechanics, trend timing, and audience psychology.
 
-CHANNEL: ${channelName}
-STYLE: ${analysis.channelStyle}
-FORMAT: ${analysis.contentFormat}
-AUDIENCE: ${analysis.targetAudience}
-TOPICS: ${analysis.topics.join(', ')}
+Your task: Generate 5 UNMISSABLE, SPECIFIC, EXECUTABLE video ideas for ${channelName} that capitalise on CURRENT trends.
 
-RECENT VIDEOS (match this title style exactly):
+═══ CHANNEL DNA ═══
+Creator: ${channelName}
+Title Formula: ${titleFormula}
+Power Words They Use: ${hookWords}
+Content Style: ${analysis.channelStyle}
+Format: ${analysis.contentFormat}
+Audience: ${analysis.targetAudience}
+
+═══ THEIR ACTUAL RECENT TITLES (copy this EXACT style, energy, length) ═══
 ${videoList}
 
-RELEVANT NEWS (use these as direct inspiration):
+═══ BREAKING NEWS RIGHT NOW (EACH IDEA MUST LINK TO ONE OF THESE) ═══
 ${newsList}
 
-REDDIT DISCUSSIONS:
+═══ REDDIT COMMUNITY BUZZ (what their audience is saying RIGHT NOW) ═══
 ${redditList}
 
-Rules:
-- Titles MUST match the channel's exact style (same capitalisation, punctuation, hook pattern, length)
-- Each idea must connect to the news or Reddit data above
-- Thumbnail: specific layout, colors, main image, text overlay, mood
-- Concept: what the video covers, key points, why it will perform well now
+═══ RULES — READ CAREFULLY ═══
+1. TITLE: Must sound IDENTICAL to this creator — same capitalisation, same hooks, same length, same energy. If they use "$X" in titles, use it. If they use "I Spent", use it. Do NOT deviate from their formula.
+2. TREND CONNECTION: Each idea MUST reference a specific [NEWS X] or [REDDIT X] item above. Name it explicitly. Explain WHY this is the perfect moment to make this video.
+3. THUMBNAIL: Think like a professional designer. Specific colors, exact text overlay wording, composition, what emotion the viewer feels when they see it.
+4. CONCEPT: Be SPECIFIC. What exactly happens in the video? What is the hook? What is the surprising moment? What will people talk about after watching?
 
-Return this exact JSON array with exactly 5 items:
-[{"id":1,"title":"","thumbnailDesign":"","videoIdea":""},{"id":2,"title":"","thumbnailDesign":"","videoIdea":""},{"id":3,"title":"","thumbnailDesign":"","videoIdea":""},{"id":4,"title":"","thumbnailDesign":"","videoIdea":""},{"id":5,"title":"","thumbnailDesign":"","videoIdea":""}]`
+THINK: What would make someone with 10 seconds of attention STOP and click? What would make them share it? What would make it trend?
+
+Return ONLY this JSON array, no markdown, no explanation:
+[
+  {
+    "id": 1,
+    "title": "TITLE IN CREATOR'S EXACT VOICE AND STYLE",
+    "trendConnection": "This connects to [NEWS/REDDIT X]: [specific reason why now is perfect timing for this video]",
+    "thumbnailDesign": "Exact brief: [background], [main visual], [text overlay: exact wording], [color scheme], [mood/emotion], [CTR strategy]",
+    "videoIdea": "Specific concept: [exactly what happens], [the hook/twist], [why audiences will watch to the end], [why this performs well based on the current trend]"
+  },
+  {"id":2,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},
+  {"id":3,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},
+  {"id":4,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},
+  {"id":5,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""}
+]`
   );
 
   const parsed = parseJSON(text);
