@@ -137,20 +137,25 @@ async function fetchNews(channelName: string, topics: string[]): Promise<NewsIte
     topics.slice(0, 3).join(' OR '),  // broader fallback
   ].filter(Boolean);
 
+  // Last 7 days only — no outdated news
+  const today = new Date();
+  const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const todayStr = today.toISOString().split('T')[0];
+
   for (const q of queries) {
     try {
       const res = await fetch(
-        `https://newsapi.org/v2/everything?q=${encodeURIComponent(q)}&sortBy=publishedAt&pageSize=8&language=en&apiKey=${apiKey}`,
+        `https://newsapi.org/v2/everything?q=${encodeURIComponent(q)}&from=${sevenDaysAgo}&to=${todayStr}&sortBy=publishedAt&pageSize=10&language=en&apiKey=${apiKey}`,
         { signal: AbortSignal.timeout(8000) }
       );
       if (!res.ok) continue;
       const data = await res.json();
-      const items = (data.articles || []).slice(0, 6).map((a: any) => ({
+      const items = (data.articles || []).slice(0, 8).map((a: any) => ({
         headline: a.title?.replace(/ - [^-]+$/, '') || '',
-        summary: a.description?.slice(0, 200) || '',
-        relevance: `${a.source?.name || 'News'} · ${new Date(a.publishedAt).toLocaleDateString()}`,
-      })).filter((n: NewsItem) => n.headline.length > 10);
-      if (items.length >= 3) return items;
+        summary: a.description?.slice(0, 220) || '',
+        relevance: `${a.source?.name || 'News'} · ${new Date(a.publishedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}`,
+      })).filter((n: NewsItem) => n.headline.length > 10 && !n.headline.includes('[Removed]'));
+      if (items.length >= 2) return items;
     } catch { continue; }
   }
   return [];
@@ -160,9 +165,12 @@ async function fetchNews(channelName: string, topics: string[]): Promise<NewsIte
 
 interface RedditPost { title: string; subreddit: string; score: number; comments: number; url: string; }
 
-async function fetchReddit(channelName: string): Promise<RedditPost[]> {
+async function fetchReddit(nicheQuery: string): Promise<RedditPost[]> {
   try {
-    const q = encodeURIComponent(`${channelName} site:reddit.com`);
+    // Use after: to get only posts from the last 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const dateStr = `${sevenDaysAgo.getFullYear()}-${String(sevenDaysAgo.getMonth()+1).padStart(2,'0')}-${String(sevenDaysAgo.getDate()).padStart(2,'0')}`;
+    const q = encodeURIComponent(`${nicheQuery} site:reddit.com after:${dateStr}`);
     const res = await fetch(
       `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`,
       { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
@@ -236,34 +244,38 @@ async function generateIdeas(channelName: string, analysis: ChannelAnalysis, vid
     ? reddit.map((p,i) => `[REDDIT ${i+1}] r/${p.subreddit} — "${p.title}"`).join('\n')
     : 'No Reddit data.';
 
-  const text = await callAI(`You are the world's top YouTube content strategist. Generate 5 viral video ideas for ${channelName}.
+  const today = new Date().toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 
+  const text = await callAI(`You are the world's top YouTube content strategist. Today is ${today}. Generate 5 VIDEO IDEAS that could be filmed and published THIS WEEK.
+
+CHANNEL: ${channelName}
 TITLE FORMULA: ${analysis.titleFormula}
 POWER WORDS: ${analysis.hookWords?.join(', ')}
 STYLE: ${analysis.channelStyle}
 FORMAT: ${analysis.contentFormat}
 AUDIENCE: ${analysis.targetAudience}
 UNIQUE ANGLE: ${analysis.uniqueAngle || 'Covers underrepresented topics the audience cannot find elsewhere'}
-SPECIFIC TOPICS THEY COVER: ${analysis.topics.join(', ')}
+TOPICS: ${analysis.topics.join(', ')}
 
-RECENT TITLES (copy this EXACT style):
+═══ VIDEOS ALREADY PUBLISHED — DO NOT REPEAT THESE TOPICS ═══
 ${videoList}
 
-CURRENT NEWS (cite these specifically):
+═══ BREAKING NEWS THIS WEEK — CITE THESE DIRECTLY ═══
 ${newsList}
 
-REDDIT DISCUSSIONS (use these for ideas):
+═══ WHAT PEOPLE ARE DISCUSSING RIGHT NOW ═══
 ${redditList}
 
-Rules:
-- Title MUST sound exactly like this creator — same formula, same energy, same length
-- Each idea MUST reference a specific [NEWS X] or [REDDIT X] item
-- Be SPECIFIC: what exactly happens, what is the hook, what is the twist
-- The audience is GLOBAL — YouTube auto-captions mean anyone can watch any video. Do not restrict ideas to a specific language group or country. Focus on the universal human problem the video solves.
-- Think: what would make someone stop scrolling and click?
+═══ STRICT RULES ═══
+1. FRESHNESS: Every idea must be tied to something happening THIS WEEK (reference a specific [NEWS X] or [REDDIT X] with its date). If you cannot connect it to current events, do not suggest it.
+2. NO REPEATS: Cross-check every idea against the already-published videos above. If the channel has already covered a topic, the idea is REJECTED — suggest something completely different.
+3. PRACTICAL: The idea must be filmable with the creator's existing setup — no ideas that require resources they clearly do not have.
+4. GLOBAL AUDIENCE: YouTube auto-captions make every video globally accessible. Focus on the universal human problem being solved, not language or location.
+5. TITLE MATCH: The title must sound indistinguishable from this creator's existing titles — same formula, same length, same energy, same capitalisation style.
+6. SPECIFICITY: State exactly what happens in the video, minute by minute if needed. Vague concepts are rejected.
 
-Return ONLY this JSON:
-[{"id":1,"title":"","trendConnection":"References [NEWS/REDDIT X]: why this is perfect timing","thumbnailDesign":"exact colors, layout, text overlay, main visual, emotion","videoIdea":"exactly what happens, the hook, why it performs now"},{"id":2,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},{"id":3,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},{"id":4,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},{"id":5,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""}]`);
+Return ONLY this JSON array:
+[{"id":1,"title":"TITLE IN CREATOR STYLE","trendConnection":"[NEWS/REDDIT X] published [date] — exactly why this is urgent THIS WEEK","thumbnailDesign":"specific: background color/image, exact text overlay wording, main visual element, layout, emotion","videoIdea":"specific: opening hook, what is shown, key information covered, the surprising fact or reveal, why someone will watch to the end"},{"id":2,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},{"id":3,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},{"id":4,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""},{"id":5,"title":"","trendConnection":"","thumbnailDesign":"","videoIdea":""}]`);
 
   const parsed = parseJSON(text);
   if (Array.isArray(parsed) && parsed.length > 0) return parsed as VideoIdea[];
