@@ -204,29 +204,35 @@ interface RedditPost {
 
 async function searchReddit(query: string): Promise<RedditPost[]> {
   if (!query?.trim()) return [];
+  // Reddit blocks Vercel IPs — use Google News RSS with site:reddit.com instead
   try {
-    const res = await fetch(
-      `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=month&limit=10`,
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; IdeaForge/1.0 content-research)',
-          'Accept': 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-      }
-    );
+    const rssQuery = `${query} site:reddit.com`;
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(rssQuery)}&hl=en-US&gl=US&ceid=US:en`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IdeaForge/1.0)' },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) return [];
-    const data = await res.json();
-    return (data.data?.children || [])
-      .slice(0, 5)
-      .map((p: any) => ({
-        title: p.data.title,
-        subreddit: p.data.subreddit,
-        score: p.data.score,
-        comments: p.data.num_comments,
-        url: `https://reddit.com${p.data.permalink}`,
-      }))
-      .filter((p: RedditPost) => p.title?.length > 5);
+    const xml = await res.text();
+    const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+    return items.slice(0, 6).map((item) => {
+      const rawTitle = item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '';
+      const rawUrl   = item.match(/<link>([\s\S]*?)<\/link>/)?.[1] ||
+                       item.match(/<guid[^>]*>([\s\S]*?)<\/guid>/)?.[1] || '';
+      const title = rawTitle
+        .replace(/<!\/\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g,'&').replace(/&quot;/g,'"'). replace(/&#39;/g,"'").trim();
+      // Extract subreddit from URL if present
+      const subMatch = rawUrl.match(/reddit\.com\/r\/([^/]+)/);
+      const subreddit = subMatch?.[1] || 'reddit';
+      return {
+        title,
+        subreddit,
+        score: 0,
+        comments: 0,
+        url: rawUrl || `https://reddit.com/search?q=${encodeURIComponent(query)}`,
+      };
+    }).filter(p => p.title.length > 10);
   } catch { return []; }
 }
 
