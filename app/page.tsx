@@ -565,15 +565,15 @@ export default function Home() {
             channel&apos;s style, fuelled by today&apos;s trends and community discussions.
           </p>
           <div className="input-section">
-            <label className="input-label" htmlFor="channel-url">YouTube Channel URL</label>
+            <label className="input-label" htmlFor="channel-url">Channel Name or URL</label>
             <div className="input-row">
-              <span className="input-prefix">YT://</span>
+              <span className="input-prefix">🔍</span>
               <input
                 ref={inputRef}
                 id="channel-url"
                 className="url-input"
-                type="url"
-                placeholder="youtube.com/@channelname"
+                type="text"
+                placeholder="e.g. MrBeast, Sehat Studio, or full URL"
                 value={url}
                 onChange={e => setUrl(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && analyze()}
@@ -589,7 +589,7 @@ export default function Home() {
             </div>
             {error
               ? <p className="input-error">⚠ {error}</p>
-              : <p className="input-hint">Supports @handle · /channel/ID · /c/name · /user/name</p>
+              : <p className="input-hint">Type a channel name · paste a YouTube URL · either works</p>
             }
           </div>
         </section>

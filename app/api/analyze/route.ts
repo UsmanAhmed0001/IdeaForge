@@ -73,6 +73,21 @@ async function resolveChannelId(parsed: { type: string; value: string }): Promis
   return data.items[0].id?.channelId || data.items[0].id;
 }
 
+// Search YouTube by channel name keyword
+async function searchChannelByName(name: string): Promise<string> {
+  const res = await fetch(
+    `https://www.googleapis.com/youtube/v3/search?q=${encodeURIComponent(name)}&type=channel&part=id,snippet&maxResults=1&key=${YOUTUBE_KEY}`
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(`YouTube API: ${data.error.message}`);
+  if (!data.items?.length) throw new Error(`No channel found for "${name}". Try being more specific.`);
+  return data.items[0].id?.channelId || data.items[0].id.channelId;
+}
+
+function isYouTubeUrl(input: string): boolean {
+  return input.includes('youtube.com') || input.includes('youtu.be');
+}
+
 // ─── YouTube channel + videos ─────────────────────────────────────────────────
 
 interface Video { title: string; description: string; publishedAt: string; videoId: string; thumbnail: string; }
@@ -112,20 +127,33 @@ interface NewsItem { headline: string; summary: string; relevance: string; }
 async function fetchNews(channelName: string, topics: string[]): Promise<NewsItem[]> {
   const apiKey = process.env.NEWSAPI_KEY;
   if (!apiKey) return [];
-  const query = encodeURIComponent(`${channelName}`);
-  try {
-    const res = await fetch(
-      `https://newsapi.org/v2/everything?q=${query}&sortBy=publishedAt&pageSize=6&language=en&apiKey=${apiKey}`,
-      { signal: AbortSignal.timeout(8000) }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.articles || []).slice(0, 6).map((a: any) => ({
-      headline: a.title?.replace(/ - [^-]+$/, '') || '',
-      summary: a.description?.slice(0, 200) || '',
-      relevance: `Published ${new Date(a.publishedAt).toLocaleDateString()} · ${a.source?.name || 'News'}`,
-    })).filter((n: NewsItem) => n.headline.length > 10);
-  } catch { return []; }
+
+  // Use specific search terms extracted from channel content
+  // e.g. "dengue fever prevention", "HMPV virus symptoms", "black seed oil benefits"
+  const queries = [
+    topics[0],                        // most specific term first
+    topics[1],                        // second specific term
+    topics.slice(0, 2).join(' '),     // combined search
+    topics.slice(0, 3).join(' OR '),  // broader fallback
+  ].filter(Boolean);
+
+  for (const q of queries) {
+    try {
+      const res = await fetch(
+        `https://newsapi.org/v2/everything?q=${encodeURIComponent(q)}&sortBy=publishedAt&pageSize=8&language=en&apiKey=${apiKey}`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      const items = (data.articles || []).slice(0, 6).map((a: any) => ({
+        headline: a.title?.replace(/ - [^-]+$/, '') || '',
+        summary: a.description?.slice(0, 200) || '',
+        relevance: `${a.source?.name || 'News'} · ${new Date(a.publishedAt).toLocaleDateString()}`,
+      })).filter((n: NewsItem) => n.headline.length > 10);
+      if (items.length >= 3) return items;
+    } catch { continue; }
+  }
+  return [];
 }
 
 // ─── Reddit via Google RSS ────────────────────────────────────────────────────
@@ -156,9 +184,9 @@ async function fetchReddit(channelName: string): Promise<RedditPost[]> {
 // ─── Channel analysis ─────────────────────────────────────────────────────────
 
 interface ChannelAnalysis {
-  topics: string[]; titleFormula: string; hookWords: string[];
+  topics: string[]; searchTerms: string[]; titleFormula: string; hookWords: string[];
   channelStyle: string; targetAudience: string; contentFormat: string;
-  news: NewsItem[];
+  uniqueAngle: string; news: NewsItem[];
 }
 
 async function analyzeChannel(channelName: string, channelDescription: string, videos: Video[]): Promise<ChannelAnalysis> {
@@ -170,11 +198,29 @@ DESCRIPTION: ${channelDescription || '(none)'}
 LAST 10 VIDEOS:
 ${videoList}
 
-Study the title patterns and return:
-{"topics":["topic1","topic2","topic3","topic4"],"titleFormula":"the recurring pattern e.g. educational explainer on X topic","hookWords":["word1","word2","word3"],"channelStyle":"specific tone, energy, format description","targetAudience":"describe audience by interest and language — do NOT assume their country unless it is explicitly stated in the channel description","contentFormat":"specific format e.g. short educational health tip videos in Urdu"}`);
+Analyse deeply and return ONLY this JSON:
+{
+  "topics": [
+    "SPECIFIC searchable topic from their videos e.g. dengue fever prevention, not just health",
+    "SPECIFIC condition or subject e.g. HMPV virus symptoms, black seed oil benefits",
+    "SPECIFIC underrepresented topic they cover e.g. breast lumps early detection",
+    "SPECIFIC seasonal or situational topic e.g. Ramadan fasting dehydration"
+  ],
+  "searchTerms": [
+    "2-4 word phrase you would type into Google News to find articles relevant to this channel",
+    "another specific search phrase",
+    "another one"
+  ],
+  "titleFormula": "the recurring structural pattern in their titles e.g. [Condition] + [Solution/Warning] | [Urdu subtitle]",
+  "hookWords": ["specific power words they use repeatedly"],
+  "channelStyle": "specific description — do they use shocking stats? before/after? expert authority? fear then solution?",
+  "targetAudience": "describe audience by their interests and pain points ONLY — not by language. YouTube auto-captions make every channel globally accessible to anyone. Describe WHO they are by what problems they are trying to solve, what they are searching for, what keeps them up at night.",
+  "contentFormat": "specific format e.g. short problem-solution health explainers with Urdu narration and visual demonstrations",
+  "uniqueAngle": "what makes this channel different — what underrepresented gap do they fill that others do not?"
+}`);
   const parsed = parseJSON(text);
   if (parsed?.topics) return { ...parsed, news: [] };
-  return { topics:[channelName], titleFormula:'', hookWords:[], channelStyle:'N/A', targetAudience:'General', contentFormat:'YouTube videos', news:[] };
+  return { topics:[channelName], searchTerms:[], titleFormula:'', hookWords:[], channelStyle:'N/A', targetAudience:'General', contentFormat:'YouTube videos', uniqueAngle:'', news:[] };
 }
 
 // ─── Idea generation ──────────────────────────────────────────────────────────
@@ -197,6 +243,8 @@ POWER WORDS: ${analysis.hookWords?.join(', ')}
 STYLE: ${analysis.channelStyle}
 FORMAT: ${analysis.contentFormat}
 AUDIENCE: ${analysis.targetAudience}
+UNIQUE ANGLE: ${analysis.uniqueAngle || 'Covers underrepresented topics the audience cannot find elsewhere'}
+SPECIFIC TOPICS THEY COVER: ${analysis.topics.join(', ')}
 
 RECENT TITLES (copy this EXACT style):
 ${videoList}
@@ -211,7 +259,7 @@ Rules:
 - Title MUST sound exactly like this creator — same formula, same energy, same length
 - Each idea MUST reference a specific [NEWS X] or [REDDIT X] item
 - Be SPECIFIC: what exactly happens, what is the hook, what is the twist
-- Do NOT assume or mention any specific country unless the channel explicitly targets one — focus on the language community and topic, not geography
+- The audience is GLOBAL — YouTube auto-captions mean anyone can watch any video. Do not restrict ideas to a specific language group or country. Focus on the universal human problem the video solves.
 - Think: what would make someone stop scrolling and click?
 
 Return ONLY this JSON:
@@ -232,18 +280,32 @@ export async function POST(req: NextRequest) {
     const { url } = await req.json();
     if (!url?.trim()) return NextResponse.json({ error: 'URL is required.' }, { status: 400 });
 
-    const parsed = parseYouTubeUrl(url);
-    if (!parsed) return NextResponse.json({ error: 'Invalid YouTube URL. Try: youtube.com/@channelname' }, { status: 400 });
+    let channelId: string;
 
-    const channelId = await resolveChannelId(parsed);
+    if (isYouTubeUrl(url)) {
+      // Full URL provided — parse normally
+      const parsed = parseYouTubeUrl(url);
+      if (!parsed) return NextResponse.json({ error: 'Could not parse this YouTube URL.' }, { status: 400 });
+      channelId = await resolveChannelId(parsed);
+    } else {
+      // Channel name / keyword provided — search YouTube
+      channelId = await searchChannelByName(url.trim());
+    }
     const channelData = await fetchChannelData(channelId);
 
     const analysis = await analyzeChannel(channelData.channelName, channelData.channelDescription, channelData.videos);
-    // Search Reddit by topic, not channel name — avoids unrelated country-level results
-    const redditQuery = analysis.topics.slice(0, 2).join(' ') || channelData.channelName;
-    const reddit = await fetchReddit(redditQuery);
 
-    const news = await fetchNews(channelData.channelName, analysis.topics);
+    // Use AI-extracted search terms — specific conditions and topics, not broad labels
+    const searchTerms = analysis.searchTerms?.length ? analysis.searchTerms : analysis.topics;
+    const primarySearch = searchTerms[0] || analysis.topics[0] || channelData.channelName;
+    const secondarySearch = searchTerms[1] || analysis.topics[1] || '';
+    const nicheQuery = `${primarySearch} ${secondarySearch}`.trim();
+
+    // Run news + reddit in parallel using specific search terms
+    const [news, reddit] = await Promise.all([
+      fetchNews(channelData.channelName, searchTerms),
+      fetchReddit(nicheQuery),
+    ]);
     analysis.news = news;
 
     const ideas = await generateIdeas(channelData.channelName, analysis, channelData.videos, reddit);
