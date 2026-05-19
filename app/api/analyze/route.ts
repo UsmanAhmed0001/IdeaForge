@@ -10,7 +10,7 @@ async function callAI(prompt: string): Promise<string> {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'HTTP-Referer': 'http://localhost:3000',
+      'HTTP-Referer': 'https://idea-forge-liart.vercel.app',
       'X-Title': 'IdeaForge',
     },
     body: JSON.stringify({
@@ -141,6 +141,57 @@ async function fetchChannelData(channelId: string): Promise<ChannelData> {
   };
 }
 
+// ─── Google News RSS — real live headlines, no API key needed ─────────────────
+
+interface NewsItem { headline: string; summary: string; relevance: string; }
+
+function parseRSS(xml: string, channelName: string): NewsItem[] {
+  const items = xml.match(/<item>([\s\S]*?)<\/item>/g) || [];
+  const results: NewsItem[] = [];
+  for (const item of items.slice(0, 6)) {
+    const rawTitle = item.match(/<title>([\s\S]*?)<\/title>/)?.[1] || '';
+    const rawDesc  = item.match(/<description>([\s\S]*?)<\/description>/)?.[1] || '';
+    const title = rawTitle
+      .replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+    const desc = rawDesc
+      .replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .slice(0, 220).trim();
+    if (title && title.length > 10) {
+      results.push({
+        headline: title,
+        summary: desc || 'Click to read the full story.',
+        relevance: `Relevant to ${channelName}'s content and audience`,
+      });
+    }
+  }
+  return results;
+}
+
+async function fetchRealNews(channelName: string, topics: string[]): Promise<NewsItem[]> {
+  const queries = [
+    channelName,
+    `${channelName} YouTube`,
+    topics.slice(0, 2).join(' '),
+  ].filter((q, i, arr) => Boolean(q) && arr.indexOf(q) === i);
+
+  for (const query of queries) {
+    try {
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; IdeaForge/1.0)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
+      const items = parseRSS(xml, channelName);
+      if (items.length >= 2) return items;
+    } catch { continue; }
+  }
+  return [];
+}
+
 // ─── Reddit search ─────────────────────────────────────────────────────────────
 
 interface RedditPost {
@@ -152,29 +203,35 @@ interface RedditPost {
 }
 
 async function searchReddit(query: string): Promise<RedditPost[]> {
+  if (!query?.trim()) return [];
   try {
     const res = await fetch(
-      `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=month&limit=8`,
+      `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=month&limit=10`,
       {
-        headers: { 'User-Agent': 'IdeaForge/1.0 content-research-tool' },
-        signal: AbortSignal.timeout(8000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; IdeaForge/1.0 content-research)',
+          'Accept': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
       }
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.data?.children || []).slice(0, 6).map((p: any) => ({
-      title: p.data.title,
-      subreddit: p.data.subreddit,
-      score: p.data.score,
-      comments: p.data.num_comments,
-      url: `https://reddit.com${p.data.permalink}`,
-    }));
+    return (data.data?.children || [])
+      .slice(0, 5)
+      .map((p: any) => ({
+        title: p.data.title,
+        subreddit: p.data.subreddit,
+        score: p.data.score,
+        comments: p.data.num_comments,
+        url: `https://reddit.com${p.data.permalink}`,
+      }))
+      .filter((p: RedditPost) => p.title?.length > 5);
   } catch { return []; }
 }
 
-// ─── Channel analysis ─────────────────────────────────────────────────────────
+// ─── Channel analysis (topics & style only — no AI-hallucinated news) ────────
 
-interface NewsItem { headline: string; summary: string; relevance: string; }
 interface ChannelAnalysis {
   topics: string[];
   channelStyle: string;
@@ -193,7 +250,7 @@ async function analyzeChannel(
     .join('\n');
 
   const text = await callAI(
-    `Analyse this YouTube channel.
+    `Analyse this YouTube channel. Return ONLY valid JSON, no markdown.
 
 CHANNEL: "${channelName}"
 DESCRIPTION: ${channelDescription || '(none)'}
@@ -201,18 +258,12 @@ DESCRIPTION: ${channelDescription || '(none)'}
 LAST 10 VIDEOS:
 ${videoList}
 
-Tasks:
-1. Identify 4-7 core topics/themes
-2. Describe the content style, tone, format
-3. Identify target audience
-4. Based on your knowledge, suggest 4-5 relevant recent news topics or trends that this channel should cover right now (May 2026)
-
-Return this exact JSON structure:
-{"topics":["topic1","topic2"],"channelStyle":"description","targetAudience":"description","contentFormat":"description","news":[{"headline":"headline","summary":"1-2 sentence summary","relevance":"why relevant"}]}`
+Return exactly this JSON (no news field):
+{"topics":["topic1","topic2","topic3","topic4"],"channelStyle":"tone and energy of content","targetAudience":"who watches this channel","contentFormat":"e.g. challenge videos, vlogs, product reviews"}`
   );
 
   const parsed = parseJSON(text) as ChannelAnalysis;
-  if (parsed?.topics) return parsed;
+  if (parsed?.topics) return { ...parsed, news: [] };
   return { topics: [channelName], channelStyle: 'N/A', targetAudience: 'General', contentFormat: 'YouTube videos', news: [] };
 }
 
@@ -246,7 +297,7 @@ TOPICS: ${analysis.topics.join(', ')}
 RECENT VIDEOS (match this title style exactly):
 ${videoList}
 
-RELEVANT NEWS/TRENDS:
+RELEVANT NEWS (use these as direct inspiration):
 ${newsList}
 
 REDDIT DISCUSSIONS:
@@ -283,20 +334,31 @@ export async function POST(req: NextRequest) {
     const channelId = await resolveChannelId(parsed);
     const channelData = await fetchChannelData(channelId);
 
+    // Step 1: AI analysis — topics & style only (fast, no hallucinated news)
     const analysis = await analyzeChannel(
       channelData.channelName,
       channelData.channelDescription,
       channelData.videos
     );
 
-    const redditResults = await Promise.all([
-      searchReddit(analysis.topics[0] || channelData.channelName),
-      analysis.topics[1] ? searchReddit(analysis.topics[1]) : Promise.resolve([]),
+    // Step 2: Real news + Reddit in parallel
+    const [news, redditByName, redditByChannel] = await Promise.all([
+      fetchRealNews(channelData.channelName, analysis.topics),
+      searchReddit(`${channelData.channelName} youtube`),
+      searchReddit(channelData.channelName),
     ]);
-    const redditPosts = [...redditResults[0], ...redditResults[1]]
+
+    const redditByTopic = analysis.topics[0]
+      ? await searchReddit(analysis.topics[0])
+      : [];
+
+    analysis.news = news;
+
+    const redditPosts = [...redditByName, ...redditByChannel, ...redditByTopic]
       .filter((p, i, arr) => arr.findIndex(q => q.title === p.title) === i)
       .slice(0, 8);
 
+    // Step 3: Generate ideas grounded in real data
     const ideas = await generateVideoIdeas(
       channelData.channelName,
       analysis,
