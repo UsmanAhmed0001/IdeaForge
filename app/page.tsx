@@ -1,273 +1,137 @@
 'use client';
-import React from 'react';
-
-import { useState, useRef, useEffect } from 'react';
-import Image from 'next/image';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Video {
-  title: string;
-  description: string;
-  publishedAt: string;
-  videoId: string;
-  thumbnail: string;
-}
+interface Video { title: string; description: string; publishedAt: string; videoId: string; thumbnail: string; }
+interface NewsItem { headline: string; summary: string; relevance: string; }
+interface RedditPost { title: string; subreddit: string; score: number; comments: number; url: string; }
 
-interface NewsItem {
-  headline: string;
-  summary: string;
-  relevance: string;
-}
-
-interface RedditPost {
-  title: string;
-  subreddit: string;
-  score: number;
-  comments: number;
-  url: string;
-}
-
-interface VideoIdea {
-  id: number;
-  title: string;
-  trendConnection: string;
-  thumbnailDesign: string;
-  videoIdea: string;
-}
-
+interface VideoIdea { id: number; title: string; trendConnection: string; thumbnailDesign: string; videoIdea: string; }
 interface InstagramIdea { id: number; reelHook: string; caption: string; hashtags: string; visualDirection: string; trendConnection: string; }
-interface LinkedInIdea { id: number; headline: string; postBody: string; cta: string; trendConnection: string; }
-interface FacebookIdea { id: number; postTitle: string; postBody: string; engagementQuestion: string; trendConnection: string; }
-interface TikTokIdea { id: number; hook: string; concept: string; audioSuggestion: string; trendConnection: string; }
+interface LinkedInIdea  { id: number; headline: string; postBody: string; cta: string; trendConnection: string; }
+interface FacebookIdea  { id: number; postTitle: string; postBody: string; engagementQuestion: string; trendConnection: string; }
+interface TikTokIdea    { id: number; hook: string; concept: string; audioSuggestion: string; trendConnection: string; }
 
 interface AnalysisResult {
-  channel: {
-    channelName: string;
-    channelDescription: string;
-    thumbnailUrl: string;
-    subscriberCount: string;
-    channelId: string;
-  };
+  channel: { channelName: string; channelDescription: string; thumbnailUrl: string; subscriberCount: string; channelId: string; };
   videos: Video[];
-  analysis: {
-    topics: string[];
-    channelStyle: string;
-    targetAudience: string;
-    contentFormat: string;
-    news: NewsItem[];
-  };
+  analysis: { topics: string[]; channelStyle: string; targetAudience: string; contentFormat: string; news: NewsItem[]; };
   redditPosts: RedditPost[];
   ideas: VideoIdea[];
-  platforms?: {
-    instagram: InstagramIdea[];
-    linkedin: LinkedInIdea[];
-    facebook: FacebookIdea[];
-    tiktok: TikTokIdea[];
-  };
+  platforms?: { instagram: InstagramIdea[]; linkedin: LinkedInIdea[]; facebook: FacebookIdea[]; tiktok: TikTokIdea[]; };
 }
 
-// ─── Platform tabs ────────────────────────────────────────────────────────────
+// ─── Platform metadata ────────────────────────────────────────────────────────
 
 const PLATFORMS = [
-  { id: 'youtube', label: 'YouTube', icon: '▶' },
-  { id: 'instagram', label: 'Instagram', icon: '◈' },
-  { id: 'linkedin', label: 'LinkedIn', icon: '◆' },
-  { id: 'facebook', label: 'Facebook', icon: '◉' },
-  { id: 'tiktok', label: 'TikTok', icon: '◇' },
+  { id: 'youtube',   label: 'YouTube',   short: 'YT', key: '1' },
+  { id: 'instagram', label: 'Instagram', short: 'IG', key: '2' },
+  { id: 'tiktok',    label: 'TikTok',    short: 'TT', key: '3' },
+  { id: 'linkedin',  label: 'LinkedIn',  short: 'LI', key: '4' },
+  { id: 'facebook',  label: 'Facebook',  short: 'FB', key: '5' },
 ] as const;
 
 type PlatformId = typeof PLATFORMS[number]['id'];
 
+const TRY_CHANNELS = ['MrBeast', 'MKBHD', 'Ali Abdaal', 'Veritasium', 'Emma Chamberlain'];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
-  } catch { return ''; }
+function fmtNum(n: number): string {
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace('.0', '') + 'M';
+  if (n >= 1000)    return (n / 1000).toFixed(1).replace('.0', '') + 'K';
+  return n.toString();
 }
 
-function fmtNum(n: number) {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+// Animated number count-up hook
+function useCountUp(target: number, duration = 600) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let frame: number;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      // Ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(Math.round(target * eased));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, duration]);
+  return value;
 }
 
-// ─── Thumbnail Design Brief Card ─────────────────────────────────────────────
-
-const BRIEF_PALETTES = [
-  { bg1:'#020d1f', bg2:'#061835', accent:'#4da6ff', accent2:'#00d4ff', name:'Electric Blue' },
-  { bg1:'#140a00', bg2:'#3a1a00', accent:'#ffaa33', accent2:'#ff6600', name:'Warm Amber'    },
-  { bg1:'#0d0020', bg2:'#200050', accent:'#bb66ff', accent2:'#ff44cc', name:'Neon Purple'   },
-  { bg1:'#001a00', bg2:'#003300', accent:'#33ff88', accent2:'#00ffcc', name:'Electric Green'},
-  { bg1:'#1a0a00', bg2:'#402000', accent:'#ff6633', accent2:'#ffcc00', name:'Solar Orange'  },
-  { bg1:'#0a0a0a', bg2:'#1c1c1c', accent:'#e0e0e0', accent2:'#999999', name:'Minimal B&W'  },
-  { bg1:'#050010', bg2:'#100025', accent:'#9966ff', accent2:'#ff44ff', name:'Deep Cosmos'   },
-  { bg1:'#001520', bg2:'#003040', accent:'#00d4ff', accent2:'#4488ff', name:'Cyber Teal'    },
-];
-
-function getBriefPalette(title: string, desc: string, id: number) {
-  const t = `${title} ${desc}`.toLowerCase();
-  if (t.match(/\b(ai|neural|machine|gpt|llm|data)\b/))            return BRIEF_PALETTES[0];
-  if (t.match(/\b(camera|photo|lens|sensor|color|warm)\b/))        return BRIEF_PALETTES[1];
-  if (t.match(/\b(fold|foldable|luxury|premium|pro)\b/))           return BRIEF_PALETTES[2];
-  if (t.match(/\b(battery|eco|green|nature|environment)\b/))       return BRIEF_PALETTES[3];
-  if (t.match(/\b(budget|cheap|price|fast|gaming|extreme)\b/))     return BRIEF_PALETTES[4];
-  if (t.match(/\b(compare|versus|vs|review|test|rank|score)\b/))   return BRIEF_PALETTES[5];
-  if (t.match(/\b(future|upcoming|leak|rumor|concept|next)\b/))    return BRIEF_PALETTES[6];
-  if (t.match(/\b(5g|network|chip|cpu|tech|cyber|digital)\b/))     return BRIEF_PALETTES[7];
-  return BRIEF_PALETTES[id % BRIEF_PALETTES.length];
+function StatCard({ label, value, sub }: { label: string; value: number; sub: string }) {
+  const counted = useCountUp(value);
+  return (
+    <div className="stat-card fade-in">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{counted}</div>
+      <div className="stat-sub">{sub}</div>
+    </div>
+  );
 }
 
-function parseLayout(desc: string): string {
-  const d = desc.toLowerCase();
-  if (d.match(/split|left.*right|two.*side/))  return 'Split-screen';
-  if (d.match(/center|central|middle/))         return 'Centered hero';
-  if (d.match(/close.?up|macro|detail/))        return 'Extreme close-up';
-  if (d.match(/full.?bleed|wide|panoram/))      return 'Full-bleed wide';
-  if (d.match(/person|face|reaction|hold/))     return 'Presenter + product';
-  if (d.match(/before.*after|compar/))          return 'Before / After';
-  return 'Dynamic composition';
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+const ToastContext = React.createContext<(msg: string) => void>(() => {});
+
+function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const show = useCallback((m: string) => {
+    setMsg(m);
+    setTimeout(() => setMsg(null), 1800);
+  }, []);
+  return (
+    <ToastContext.Provider value={show}>
+      {children}
+      <div className={`toast ${msg ? 'show' : ''}`}>
+        ✓ {msg}
+      </div>
+    </ToastContext.Provider>
+  );
 }
 
-function parseMood(desc: string): string {
-  const d = desc.toLowerCase();
-  if (d.match(/dark|moody|dramatic|cinematic/))    return 'Dark & Dramatic';
-  if (d.match(/bright|vibrant|bold|colorful/))     return 'Bright & Bold';
-  if (d.match(/clean|minimal|simple|white/))       return 'Clean & Minimal';
-  if (d.match(/futuristic|neon|cyber|glow/))       return 'Futuristic / Neon';
-  if (d.match(/warm|sunset|orange|amber/))         return 'Warm & Energetic';
-  return 'High Contrast';
-}
+// ─── Idea card actions ───────────────────────────────────────────────────────
 
-function IdeaThumbnail({ idea }: { idea: VideoIdea }) {
-  const pal = getBriefPalette(idea.title, idea.thumbnailDesign, idea.id);
-  const layout = parseLayout(idea.thumbnailDesign);
-  const mood = parseMood(idea.thumbnailDesign);
+function IdeaActions({ copyText, platform }: { copyText: string; platform: PlatformId }) {
+  const [copied, setCopied] = useState(false);
+  const toast = React.useContext(ToastContext);
 
-  // Extract 3 key visual elements from the description
-  const descWords = idea.thumbnailDesign
-    .replace(/[,;.]/g, ' ')
-    .split(' ')
-    .filter(w => w.length > 4)
-    .slice(0, 6);
+  const copy = () => {
+    navigator.clipboard.writeText(copyText);
+    setCopied(true);
+    toast('Copied to clipboard');
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const lockedClick = (feature: string) => toast(`${feature} — coming in v2`);
 
   return (
-    <div style={{
-      width: '100%', aspectRatio: '16/9', position: 'relative', overflow: 'hidden',
-      background: `linear-gradient(135deg, ${pal.bg1} 0%, ${pal.bg2} 100%)`,
-      display: 'flex', flexDirection: 'column',
-    }}>
-      {/* Subtle grid */}
-      <div style={{ position:'absolute', inset:0, pointerEvents:'none', opacity:0.04,
-        backgroundImage:'linear-gradient(rgba(255,255,255,0.6) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.6) 1px,transparent 1px)',
-        backgroundSize:'36px 36px' }} />
-
-      {/* Accent radial glow */}
-      <div style={{ position:'absolute', inset:0, pointerEvents:'none',
-        background:`radial-gradient(ellipse 55% 55% at 85% 20%, ${pal.accent}30 0%, transparent 70%)` }} />
-      <div style={{ position:'absolute', inset:0, pointerEvents:'none',
-        background:`radial-gradient(ellipse 40% 40% at 15% 80%, ${pal.accent2}20 0%, transparent 70%)` }} />
-
-      {/* TOP ROW — badge + colour chips */}
-      <div style={{ position:'relative', zIndex:2, display:'flex', alignItems:'center', justifyContent:'space-between',
-        padding:'clamp(8px,1.5vw,16px) clamp(10px,2vw,20px)', borderBottom:`1px solid ${pal.accent}20` }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-          <div style={{ fontFamily:'var(--font-display)', fontSize:'clamp(14px,2.2vw,22px)',
-            color:pal.accent, letterSpacing:'0.06em' }}>
-            0{idea.id}
-          </div>
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'clamp(7px,1vw,10px)',
-            letterSpacing:'0.14em', textTransform:'uppercase', color:`${pal.accent}90` }}>
-            Thumbnail Brief
-          </div>
-        </div>
-        {/* Colour palette chips */}
-        <div style={{ display:'flex', gap:'4px', alignItems:'center' }}>
-          {[pal.bg2, pal.accent, pal.accent2, '#ffffff'].map((c, i) => (
-            <div key={i} style={{ width:'clamp(12px,2vw,18px)', height:'clamp(12px,2vw,18px)',
-              borderRadius:'3px', background:c, border:'1px solid rgba(255,255,255,0.15)' }} />
-          ))}
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'clamp(6px,0.9vw,9px)',
-            color:`${pal.accent}70`, letterSpacing:'0.1em', marginLeft:'4px' }}>
-            {pal.name}
-          </div>
-        </div>
-      </div>
-
-      {/* CENTRE — title + layout diagram */}
-      <div style={{ position:'relative', zIndex:2, flex:1, display:'flex', alignItems:'stretch',
-        padding:'clamp(8px,1.5vw,16px) clamp(10px,2vw,20px)', gap:'clamp(10px,2vw,20px)' }}>
-
-        {/* Left: title display */}
-        <div style={{ flex:'1 1 55%', display:'flex', flexDirection:'column', justifyContent:'center', gap:'clamp(6px,1vw,10px)' }}>
-          <div style={{ fontFamily:'var(--font-display)', fontSize:'clamp(14px,2.6vw,32px)',
-            lineHeight:1.05, letterSpacing:'0.03em', color:'#ffffff',
-            textShadow:`0 0 30px ${pal.accent}60`, wordBreak:'break-word' }}>
-            {idea.title}
-          </div>
-          {/* Tag pills */}
-          <div style={{ display:'flex', flexWrap:'wrap', gap:'4px' }}>
-            {[layout, mood].map((tag, i) => (
-              <span key={i} style={{ fontFamily:'var(--font-mono)', fontSize:'clamp(6px,0.85vw,9px)',
-                letterSpacing:'0.12em', textTransform:'uppercase',
-                padding:'3px 8px', borderRadius:'999px',
-                background:`${pal.accent}18`, border:`1px solid ${pal.accent}40`,
-                color:pal.accent }}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: visual direction */}
-        <div style={{ flex:'0 0 38%', display:'flex', flexDirection:'column', gap:'clamp(4px,0.8vw,8px)',
-          justifyContent:'center' }}>
-          <div style={{ fontFamily:'var(--font-mono)', fontSize:'clamp(6px,0.8vw,9px)',
-            letterSpacing:'0.18em', textTransform:'uppercase', color:`${pal.accent}70`,
-            marginBottom:'2px' }}>
-            Visual Direction
-          </div>
-          {descWords.slice(0, 4).map((word, i) => (
-            <div key={i} style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-              <div style={{ width:'clamp(3px,0.5vw,5px)', height:'clamp(3px,0.5vw,5px)',
-                borderRadius:'50%', background:pal.accent, opacity: 1 - i*0.2, flexShrink:0 }} />
-              <div style={{ fontFamily:'var(--font-mono)', fontSize:'clamp(7px,0.9vw,10px)',
-                color:`rgba(255,255,255,${0.8 - i*0.15})`, letterSpacing:'0.04em',
-                textTransform:'capitalize', lineHeight:1.3 }}>
-                {word}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* BOTTOM BAR — layout preview */}
-      <div style={{ position:'relative', zIndex:2, padding:'clamp(6px,1.2vw,12px) clamp(10px,2vw,20px)',
-        borderTop:`1px solid ${pal.accent}20`,
-        background:`linear-gradient(to right, ${pal.accent}12 0%, transparent 100%)`,
-        display:'flex', alignItems:'center', gap:'clamp(8px,1.5vw,16px)' }}>
-
-        {/* Tiny layout sketch */}
-        <div style={{ flexShrink:0, display:'flex', gap:'2px', alignItems:'center' }}>
-          {layout === 'Split-screen' && <>
-            <div style={{ width:'clamp(14px,2.2vw,22px)', height:'clamp(10px,1.5vw,14px)',
-              background:`${pal.accent}35`, borderRadius:'2px 0 0 2px' }} />
-            <div style={{ width:'clamp(14px,2.2vw,22px)', height:'clamp(10px,1.5vw,14px)',
-              background:`${pal.accent2}35`, borderRadius:'0 2px 2px 0' }} />
-          </>}
-          {layout !== 'Split-screen' && <>
-            <div style={{ width:'clamp(10px,1.5vw,14px)', height:'clamp(10px,1.5vw,14px)',
-              background:`${pal.accent}25`, borderRadius:'2px' }} />
-            <div style={{ width:'clamp(16px,2.5vw,24px)', height:'clamp(10px,1.5vw,14px)',
-              background:`${pal.accent}40`, borderRadius:'2px' }} />
-          </>}
-        </div>
-
-        <div style={{ fontFamily:'var(--font-mono)', fontSize:'clamp(7px,0.9vw,10px)',
-          color:`rgba(255,255,255,0.5)`, letterSpacing:'0.1em', flex:1,
-          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-          {idea.thumbnailDesign.slice(0, 80)}{idea.thumbnailDesign.length > 80 ? '…' : ''}
-        </div>
-      </div>
+    <div className="idea-actions">
+      <button className={`action-btn ${copied ? 'copied' : ''}`} onClick={copy}>
+        {copied ? '✓ COPIED' : 'COPY'}
+      </button>
+      <button className="action-btn locked" onClick={() => lockedClick('Regenerate')}>
+        ↻ <span className="lock-badge">V2</span>
+      </button>
+      {platform === 'youtube' && (
+        <>
+          <button className="action-btn locked" onClick={() => lockedClick('AI Script Writer')}>
+            SCRIPT <span className="lock-badge">V2</span>
+          </button>
+          <button className="action-btn locked" onClick={() => lockedClick('AI Thumbnail Studio')}>
+            THUMBNAIL <span className="lock-badge">V2</span>
+          </button>
+        </>
+      )}
+      {platform !== 'youtube' && (
+        <button className="action-btn locked" onClick={() => lockedClick('AI Script Writer')}>
+          SCRIPT <span className="lock-badge">V2</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -275,437 +139,463 @@ function IdeaThumbnail({ idea }: { idea: VideoIdea }) {
 // ─── Loading overlay ──────────────────────────────────────────────────────────
 
 const STEPS = [
-  'Fetching channel & videos',
-  'Analysing content topics',
-  'Searching latest news',
-  'Scanning Reddit discussions',
-  'Generating 5 video ideas',
+  'Analysing channel',
+  'Fetching live news',
+  'Mining Reddit',
+  'Generating ideas',
+  'Adapting per platform',
 ];
 
 function LoadingOverlay({ step }: { step: number }) {
-  const pct = Math.min(Math.round((step / STEPS.length) * 100), 98);
+  const progress = Math.min(((step + 1) / STEPS.length) * 100, 100);
   return (
-    <div className="loading-overlay">
-      <div className="loading-logo">IDEA<span>FORGE</span></div>
-      <div className="loading-tagline">Content Intelligence Engine</div>
-      <ul className="loading-steps">
-        {STEPS.map((s, i) => (
-          <li key={i} className={`loading-step${i < step ? ' done' : i === step ? ' active' : ''}`}>
-            <span className="step-dot">
-              {i < step ? '✓' : i === step ? '◉' : i + 1}
-            </span>
-            {s}
-          </li>
-        ))}
-      </ul>
-      <div className="loading-bar-track">
-        <div className="loading-bar-fill" style={{ width: `${pct}%` }} />
+    <div className="loading">
+      <div className="loading-glow" />
+      <div className="loading-inner">
+        <div className="loading-pill">PROCESSING</div>
+        <div className="loading-title">
+          Building your<br/>
+          <em>content pack</em>
+        </div>
+        <div className="loading-steps">
+          {STEPS.map((label, i) => (
+            <div key={i} className={`loading-step ${i < step ? 'done' : i === step ? 'active' : ''}`}>
+              <div className="step-dot" />
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="loading-bar">
+          <div className="loading-bar-fill" style={{ width: `${progress}%` }} />
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Ticker ───────────────────────────────────────────────────────────────────
+// ─── Top navigation ───────────────────────────────────────────────────────────
 
-const TICKS = [
-  'Content Intelligence', 'YouTube Analysis', 'Trend Discovery', 'Idea Generation',
-  'Reddit Research', 'News Monitoring', 'Channel Insights', 'AI Strategy',
-  'Thumbnail Direction', 'Topic Mapping', 'Audience Analysis', 'Video Ideation',
-];
-
-function Ticker() {
-  const items = [...TICKS, ...TICKS];
+function TopNav({ onLogoClick, onSearchClick }: { onLogoClick: () => void; onSearchClick: () => void }) {
+  const toast = React.useContext(ToastContext);
   return (
-    <div className="ticker">
-      <div className="ticker-inner">
-        {items.map((t, i) => (
-          <span className="ticker-item" key={i}>
-            <span className="ticker-dot" />{t}
-          </span>
-        ))}
+    <div className="topnav">
+      <div className="topnav-logo" onClick={onLogoClick}>IDEAFORGE</div>
+      <div className="topnav-spacer" />
+      <div className="topnav-search" onClick={onSearchClick}>
+        <span>Search channel</span>
+        <span style={{ flex: 1 }} />
+        <span className="kbd">⌘</span><span className="kbd">K</span>
       </div>
+      <button className="topnav-icon" onClick={() => toast('Trend alerts — coming in v2')} aria-label="Notifications">
+        🔔<span className="badge" />
+      </button>
+      <button className="topnav-icon" onClick={() => toast('Settings — coming in v2')} aria-label="Settings">
+        ⚙
+      </button>
+      <div className="topnav-avatar" onClick={() => toast('Account — coming in v2')}>U</div>
     </div>
   );
 }
 
-// ─── Results ──────────────────────────────────────────────────────────────────
+// ─── Results view ─────────────────────────────────────────────────────────────
 
-function ResultsView({ result, onReset }: { result: AnalysisResult; onReset: () => void }) {
-  const [activePlatform, setActivePlatform] = React.useState<PlatformId>('youtube');
-  const r = result.analysis;
+function ResultsView({ result, onReset, platform, setPlatform }: {
+  result: AnalysisResult;
+  onReset: () => void;
+  platform: PlatformId;
+  setPlatform: (p: PlatformId) => void;
+}) {
+  const { channel, analysis, videos, redditPosts, ideas, platforms } = result;
+
+  const counts = {
+    youtube:   ideas.length,
+    instagram: platforms?.instagram?.length || 0,
+    tiktok:    platforms?.tiktok?.length || 0,
+    linkedin:  platforms?.linkedin?.length || 0,
+    facebook:  platforms?.facebook?.length || 0,
+  };
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="results-section">
+    <div className="results">
 
-      {/* Channel header */}
-      <div className="channel-header">
-        {result.channel.thumbnailUrl ? (
-          <Image
-            src={result.channel.thumbnailUrl}
-            alt={result.channel.channelName}
-            width={64} height={64}
-            className="channel-avatar"
-            unoptimized
-          />
-        ) : (
-          <div className="channel-avatar-ph">
-            {result.channel.channelName[0]?.toUpperCase()}
-          </div>
+      <div className="channel-bar fade-in">
+        {channel.thumbnailUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={channel.thumbnailUrl} alt={channel.channelName} className="channel-avatar" />
         )}
-        <div>
-          <div className="channel-tag">◈ {result.channel.subscriberCount} subscribers</div>
-          <div className="channel-name">{result.channel.channelName.toUpperCase()}</div>
-          {result.channel.channelDescription && (
-            <p className="channel-desc">{result.channel.channelDescription}</p>
+        <div className="channel-info">
+          <div className="channel-name">{channel.channelName}</div>
+          <div className="channel-meta">
+            <span>{channel.subscriberCount} subscribers</span>
+            <span className="dot">·</span>
+            <span>{videos.length} recent videos</span>
+            {analysis.topics?.[0] && (
+              <>
+                <span className="dot">·</span>
+                <span className="accent-meta">{analysis.topics[0]}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="stats-bento">
+        <StatCard label="Total Ideas" value={total} sub="across 5 platforms" />
+        <StatCard label="News This Week" value={analysis.news?.length || 0} sub="live headlines" />
+        <StatCard label="Reddit Threads" value={redditPosts.length} sub="community signals" />
+        <StatCard label="Channel Topics" value={analysis.topics?.length || 0} sub={analysis.contentFormat?.slice(0, 20) || 'analysed'} />
+      </div>
+
+      {videos.length > 0 && (
+        <div className="sect fade-in delay-2">
+          <div className="sect-head">
+            <span className="sect-title">Recent uploads</span>
+            <span className="sect-count">{videos.length} videos · matched for style</span>
+          </div>
+          <div className="videos-rail">
+            {videos.map((v, i) => (
+              <a key={i} href={`https://youtube.com/watch?v=${v.videoId}`} target="_blank" rel="noopener noreferrer" className="video-thumb">
+                {v.thumbnail && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={v.thumbnail} alt={v.title} />
+                )}
+                <div className="video-thumb-meta">
+                  <div className="video-thumb-date">
+                    {v.publishedAt ? new Date(v.publishedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : ''}
+                  </div>
+                  <div className="video-thumb-title">{v.title}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="sect fade-in delay-3">
+        <div className="sect-head">
+          <span className="sect-title">Intelligence feed</span>
+          <span className="sect-count">last 7 days · live</span>
+        </div>
+        <div className="intel-grid">
+          <div>
+            <div className="intel-col-head">Latest news</div>
+            {analysis.news.length > 0 ? analysis.news.map((n, i) => (
+              <div key={i} className="news-card">
+                <div className="news-hl">{n.headline}</div>
+                {n.summary && <div className="news-sum">{n.summary}</div>}
+                {n.relevance && <div className="news-rel">{n.relevance}</div>}
+              </div>
+            )) : <div className="no-data">No news data retrieved</div>}
+          </div>
+          <div>
+            <div className="intel-col-head">Reddit discussions</div>
+            {redditPosts.length > 0 ? redditPosts.map((p, i) => (
+              <a key={i} href={p.url} target="_blank" rel="noopener noreferrer" className="reddit-card">
+                <div className="reddit-meta">
+                  <span className="reddit-sub">r/{p.subreddit}</span>
+                  {p.score > 0 && <span>↑ {fmtNum(p.score)}</span>}
+                </div>
+                <div className="reddit-t">{p.title}</div>
+              </a>
+            )) : <div className="no-data">No Reddit posts found</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* PLATFORM PACK ------------------------------------------------ */}
+      <div className="platforms-section">
+        <div className="platforms-head">
+          <span className="platforms-eyebrow">◆ AI-generated · trend-informed · channel-matched</span>
+          <div className="platforms-title">
+            Your <em>content pack</em>
+          </div>
+          <div className="platforms-sub">5 ideas per platform — ready to publish</div>
+        </div>
+
+        <div className="tab-bar-wrap">
+          <div className="tab-bar">
+            {PLATFORMS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => setPlatform(p.id)}
+                className={`tab ${platform === p.id ? 'active' : ''}`}
+                title={`Press ${p.key}`}
+              >
+                <span className="tab-code">{p.short}</span>
+                <span>{p.label}</span>
+                {counts[p.id] > 0 && <span className="tab-count">{counts[p.id]}</span>}
+                <span className="tab-key">{p.key}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="ideas-grid">
+
+          {platform === 'youtube' && (
+            ideas.length === 0
+              ? <div className="no-data">No YouTube ideas — try again</div>
+              : ideas.map((idea, i) => (
+                <div key={idea.id} className="idea-card" data-platform="youtube" style={{ animationDelay: `${i * 0.06}s` }}>
+                  <div className="platform-strip youtube" />
+                  <div className="idea-body">
+                    <div className="idea-top">
+                      <span className="idea-num">YT · IDEA {String(idea.id).padStart(2, '0')}</span>
+                      <IdeaActions
+                        platform="youtube"
+                        copyText={`${idea.title}\n\n${idea.videoIdea}\n\nThumbnail: ${idea.thumbnailDesign}`}
+                      />
+                    </div>
+                    <h3 className="idea-headline">{idea.title}</h3>
+                    <div className="idea-block">
+                      <div className="idea-label">Video concept</div>
+                      <div className="idea-text">{idea.videoIdea}</div>
+                    </div>
+                    <div className="idea-block">
+                      <div className="idea-label">Thumbnail direction</div>
+                      <div className="idea-text" style={{ fontStyle: 'italic' }}>{idea.thumbnailDesign}</div>
+                    </div>
+                    {idea.trendConnection && (
+                      <div className="idea-trend">
+                        <div className="idea-label">Trend connection</div>
+                        <div className="idea-text">{idea.trendConnection}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          )}
+
+          {platform === 'instagram' && (
+            !platforms?.instagram?.length
+              ? <div className="no-data">Instagram content generating...</div>
+              : platforms.instagram.map((item, i) => (
+                <div key={item.id} className="idea-card" data-platform="instagram" style={{ animationDelay: `${i * 0.06}s` }}>
+                  <div className="platform-strip instagram" />
+                  <div className="idea-body">
+                    <div className="idea-top">
+                      <span className="idea-num">IG · REEL {String(item.id).padStart(2, '0')}</span>
+                      <IdeaActions
+                        platform="instagram"
+                        copyText={`${item.reelHook}\n\n${item.caption}\n\n${item.hashtags}`}
+                      />
+                    </div>
+                    <h3 className="idea-headline">{item.reelHook}</h3>
+                    <div className="idea-block">
+                      <div className="idea-label">Caption</div>
+                      <div className="idea-text">{item.caption}</div>
+                    </div>
+                    <div className="idea-block">
+                      <div className="idea-label">Visual direction</div>
+                      <div className="idea-text" style={{ fontStyle: 'italic' }}>{item.visualDirection}</div>
+                    </div>
+                    <div className="idea-block">
+                      <div className="idea-label">Hashtags</div>
+                      <div className="hashtag-block">{item.hashtags}</div>
+                    </div>
+                    {item.trendConnection && (
+                      <div className="idea-trend">
+                        <div className="idea-label">Trend connection</div>
+                        <div className="idea-text">{item.trendConnection}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          )}
+
+          {platform === 'tiktok' && (
+            !platforms?.tiktok?.length
+              ? <div className="no-data">TikTok content generating...</div>
+              : platforms.tiktok.map((item, i) => (
+                <div key={item.id} className="idea-card" data-platform="tiktok" style={{ animationDelay: `${i * 0.06}s` }}>
+                  <div className="platform-strip tiktok" />
+                  <div className="idea-body">
+                    <div className="idea-top">
+                      <span className="idea-num">TT · IDEA {String(item.id).padStart(2, '0')}</span>
+                      <IdeaActions
+                        platform="tiktok"
+                        copyText={`${item.hook}\n\n${item.concept}\n\nAudio: ${item.audioSuggestion}`}
+                      />
+                    </div>
+                    <h3 className="idea-headline">{item.hook}</h3>
+                    <div className="idea-block">
+                      <div className="idea-label">Video concept</div>
+                      <div className="idea-text">{item.concept}</div>
+                    </div>
+                    <div className="idea-block">
+                      <div className="idea-label">Audio direction</div>
+                      <div className="idea-text" style={{ fontStyle: 'italic' }}>{item.audioSuggestion}</div>
+                    </div>
+                    {item.trendConnection && (
+                      <div className="idea-trend">
+                        <div className="idea-label">Trend connection</div>
+                        <div className="idea-text">{item.trendConnection}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          )}
+
+          {platform === 'linkedin' && (
+            !platforms?.linkedin?.length
+              ? <div className="no-data">LinkedIn content generating...</div>
+              : platforms.linkedin.map((item, i) => (
+                <div key={item.id} className="idea-card" data-platform="linkedin" style={{ animationDelay: `${i * 0.06}s` }}>
+                  <div className="platform-strip linkedin" />
+                  <div className="idea-body">
+                    <div className="idea-top">
+                      <span className="idea-num">LI · POST {String(item.id).padStart(2, '0')}</span>
+                      <IdeaActions
+                        platform="linkedin"
+                        copyText={`${item.headline}\n\n${item.postBody}\n\n${item.cta}`}
+                      />
+                    </div>
+                    <h3 className="idea-headline">{item.headline}</h3>
+                    <div className="idea-block">
+                      <div className="idea-label">Post body</div>
+                      <div className="idea-text">{item.postBody}</div>
+                    </div>
+                    <div className="idea-block">
+                      <div className="idea-label">Call to action</div>
+                      <div className="idea-text" style={{ fontStyle: 'italic' }}>{item.cta}</div>
+                    </div>
+                    {item.trendConnection && (
+                      <div className="idea-trend">
+                        <div className="idea-label">Trend connection</div>
+                        <div className="idea-text">{item.trendConnection}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+          )}
+
+          {platform === 'facebook' && (
+            !platforms?.facebook?.length
+              ? <div className="no-data">Facebook content generating...</div>
+              : platforms.facebook.map((item, i) => (
+                <div key={item.id} className="idea-card" data-platform="facebook" style={{ animationDelay: `${i * 0.06}s` }}>
+                  <div className="platform-strip facebook" />
+                  <div className="idea-body">
+                    <div className="idea-top">
+                      <span className="idea-num">FB · POST {String(item.id).padStart(2, '0')}</span>
+                      <IdeaActions
+                        platform="facebook"
+                        copyText={`${item.postTitle}\n\n${item.postBody}\n\n${item.engagementQuestion}`}
+                      />
+                    </div>
+                    <h3 className="idea-headline">{item.postTitle}</h3>
+                    <div className="idea-block">
+                      <div className="idea-label">Post body</div>
+                      <div className="idea-text">{item.postBody}</div>
+                    </div>
+                    <div className="idea-block">
+                      <div className="idea-label">Engagement question</div>
+                      <div className="idea-text" style={{ fontStyle: 'italic' }}>{item.engagementQuestion}</div>
+                    </div>
+                    {item.trendConnection && (
+                      <div className="idea-trend">
+                        <div className="idea-label">Trend connection</div>
+                        <div className="idea-text">{item.trendConnection}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
           )}
         </div>
       </div>
 
-      {/* Videos */}
-      <div className="sec">
-        <div className="sec-hd">
-          <span className="sec-num">01</span>
-          <span className="sec-title">RECENT VIDEOS</span>
-        </div>
-        <div className="videos-grid">
-          {result.videos.map((v, i) => (
-            <a
-              key={i}
-              href={`https://youtube.com/watch?v=${v.videoId}`}
-              target="_blank" rel="noopener noreferrer"
-              className="video-card"
-              style={{ animationDelay: `${i * 0.05}s` }}
-            >
-              {v.thumbnail
-                ? <Image src={v.thumbnail} alt={v.title} width={320} height={180} className="video-thumb-img" unoptimized />
-                : <div className="video-thumb-ph">▶</div>
-              }
-              <div className="video-info">
-                <div className="video-date">{fmtDate(v.publishedAt)}</div>
-                <div className="video-title">{v.title}</div>
-              </div>
-            </a>
-          ))}
-        </div>
+      <div className="reset-wrap">
+        <button className="reset-btn" onClick={onReset}>← Analyse another channel</button>
       </div>
+    </div>
+  );
+}
 
-      <div className="divider" />
+// ─── Hero ─────────────────────────────────────────────────────────────────────
 
-      {/* Channel profile */}
-      <div className="sec">
-        <div className="sec-hd">
-          <span className="sec-num">02</span>
-          <span className="sec-title">CHANNEL PROFILE</span>
-        </div>
-        <div className="topics-wrap">
-          {r.topics.map((t, i) => <span key={i} className="topic-tag">{t}</span>)}
-        </div>
-        <div className="meta-block">
-          <strong>Format</strong>{r.contentFormat}<br />
-          <strong>Audience</strong>{r.targetAudience}<br />
-          <strong>Style</strong>{r.channelStyle}
-        </div>
+function Hero({ url, setUrl, onAnalyse, error, inputRef }: {
+  url: string;
+  setUrl: (s: string) => void;
+  onAnalyse: () => void;
+  error: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+  return (
+    <section className="hero">
+      <div className="hero-glow" />
+      <div className="hero-pill">
+        <span className="live-dot" />
+        CONTENT INTELLIGENCE · LIVE
       </div>
-
-      <div className="divider" />
-
-      {/* Intelligence feed */}
-      <div className="sec">
-        <div className="sec-hd">
-          <span className="sec-num">03</span>
-          <span className="sec-title">INTELLIGENCE FEED</span>
+      <h1 className="hero-title">
+        One channel.<br/>
+        <span>Every platform.</span>
+      </h1>
+      <p className="hero-sub">
+        Drop any YouTube channel. Get 25 ideas across YouTube, Instagram, TikTok,
+        LinkedIn and Facebook — grounded in this week&apos;s real news.
+      </p>
+      <div className="input-section">
+        <div className="input-row">
+          <input
+            ref={inputRef}
+            className="url-input"
+            type="text"
+            placeholder="MrBeast, Sehat Studio, or a full YouTube URL"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && onAnalyse()}
+            autoFocus
+          />
+          <button className="analyse-btn" onClick={onAnalyse} disabled={!url.trim()}>
+            ANALYSE →
+          </button>
         </div>
-        <div className="two-col">
-          <div>
-            <div className="feed-label">◈ Latest News</div>
-            {r.news.length ? (
-              <div className="news-list">
-                {r.news.map((n, i) => (
-                  <div key={i} className="news-card">
-                    <div className="news-hl">{n.headline}</div>
-                    <div className="news-sum">{n.summary}</div>
-                    {n.relevance && <div className="news-rel">↳ {n.relevance}</div>}
-                  </div>
-                ))}
-              </div>
-            ) : <p className="no-data">No news data retrieved.</p>}
-          </div>
-          <div>
-            <div className="feed-label">◈ Reddit Discussions</div>
-            {result.redditPosts.length ? (
-              <div className="reddit-list">
-                {result.redditPosts.map((p, i) => (
-                  <a key={i} href={p.url} target="_blank" rel="noopener noreferrer" className="reddit-card">
-                    <div className="reddit-meta">
-                      <span className="reddit-sub">r/{p.subreddit}</span>
-                      <span className="reddit-eng">↑{fmtNum(p.score)} · {fmtNum(p.comments)}</span>
-                    </div>
-                    <div className="reddit-t">{p.title}</div>
-                  </a>
-                ))}
-              </div>
-            ) : <p className="no-data">No Reddit posts found.</p>}
-          </div>
-        </div>
-      </div>
-
-      {/* Platform tabs + ideas */}
-      <div className="ideas-section">
-        <div className="ideas-hd">
-          <div className="ideas-ey">◈ AI-Generated · Trend-Informed · Multi-Platform</div>
-          <div className="ideas-big">CONTENT<br />PACK</div>
-        </div>
-
-        {/* Platform tab bar */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 32, borderBottom: '0.5px solid var(--border)', paddingBottom: 0 }}>
-          {PLATFORMS.map(p => (
-            <button
-              key={p.id}
-              onClick={() => setActivePlatform(p.id)}
-              style={{
-                padding: '8px 18px',
-                fontSize: 11,
-                fontFamily: 'var(--font-mono)',
-                letterSpacing: '0.08em',
-                fontWeight: activePlatform === p.id ? 500 : 400,
-                color: activePlatform === p.id ? 'var(--text)' : 'var(--text-muted)',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: activePlatform === p.id ? '2px solid var(--accent)' : '2px solid transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                transition: 'all 0.15s',
-                marginBottom: -1,
-              }}
-            >
-              {p.icon} {p.label.toUpperCase()}
-              {p.id !== 'youtube' && result.platforms && (
-                <span style={{ fontSize: 9, padding: '1px 5px', background: 'var(--accent)', color: '#000', borderRadius: 999, marginLeft: 2, fontWeight: 500 }}>NEW</span>
-              )}
+        {error
+          ? <p className="input-error">⚠ {error}</p>
+          : <p className="input-hint">Type a channel name · paste a URL · press <span className="kbd">⏎</span> to analyse</p>
+        }
+        <div className="try-row">
+          {TRY_CHANNELS.map(c => (
+            <button key={c} className="try-chip" onClick={() => { setUrl(c); setTimeout(onAnalyse, 50); }}>
+              {c}
             </button>
           ))}
         </div>
-
-        {/* YouTube tab */}
-        {activePlatform === 'youtube' && result.ideas.length === 0 && (
-          <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>
-            No ideas generated — try analysing again.
-          </p>
-        )}
-        {activePlatform === 'youtube' && result.ideas.length > 0 && (
-          <>
-            {result.ideas.map((idea, i) => (
-              <div key={idea.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
-                <IdeaThumbnail idea={idea} />
-                <div className="idea-body">
-                  <div className="idea-num-col">
-                    <span className="idea-num">0{idea.id}</span>
-                    <span className="idea-num-label">Concept</span>
-                  </div>
-                  <div className="idea-content">
-                    <h3 className="idea-title">{idea.title}</h3>
-                    <div className="idea-fields">
-                      <div>
-                        <div className="idea-fl">Video Concept</div>
-                        <p className="idea-fd">{idea.videoIdea}</p>
-                      </div>
-                      <div>
-                        <div className="idea-fl">Thumbnail Direction</div>
-                        <p className="idea-fd italic">{idea.thumbnailDesign}</p>
-                      </div>
-                    </div>
-                    {idea.trendConnection && (
-                      <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-                        <div className="idea-fl">Trend Connection</div>
-                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, letterSpacing: '0.02em' }}>{idea.trendConnection}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </>
-        )}
-
-        {/* Instagram tab */}
-        {activePlatform === 'instagram' && (
-          <div>
-            {!result.platforms?.instagram?.length ? (
-              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>Instagram content generating...</p>
-            ) : result.platforms.instagram.map((item, i) => (
-              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div style={{ background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)', borderRadius: '8px 8px 0 0', height: 6 }} />
-                <div className="idea-body">
-                  <div className="idea-num-col">
-                    <span className="idea-num">0{item.id}</span>
-                    <span className="idea-num-label">Reel</span>
-                  </div>
-                  <div className="idea-content">
-                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.reelHook}</h3>
-                    <div className="idea-fields">
-                      <div>
-                        <div className="idea-fl">Caption</div>
-                        <p className="idea-fd">{item.caption}</p>
-                      </div>
-                      <div>
-                        <div className="idea-fl">Visual Direction</div>
-                        <p className="idea-fd italic">{item.visualDirection}</p>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 12 }}>
-                      <div className="idea-fl">Hashtags</div>
-                      <p style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', lineHeight: 1.8 }}>{item.hashtags}</p>
-                    </div>
-                    {item.trendConnection && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <div className="idea-fl">Trend Connection</div>
-                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* LinkedIn tab */}
-        {activePlatform === 'linkedin' && (
-          <div>
-            {!result.platforms?.linkedin?.length ? (
-              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>LinkedIn content generating...</p>
-            ) : result.platforms.linkedin.map((item, i) => (
-              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div style={{ background: '#0077b5', borderRadius: '8px 8px 0 0', height: 6 }} />
-                <div className="idea-body">
-                  <div className="idea-num-col">
-                    <span className="idea-num">0{item.id}</span>
-                    <span className="idea-num-label">Post</span>
-                  </div>
-                  <div className="idea-content">
-                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.headline}</h3>
-                    <div className="idea-fields">
-                      <div>
-                        <div className="idea-fl">Post Body</div>
-                        <p className="idea-fd" style={{ whiteSpace: 'pre-line' }}>{item.postBody}</p>
-                      </div>
-                      <div>
-                        <div className="idea-fl">Call to Action</div>
-                        <p className="idea-fd italic">{item.cta}</p>
-                      </div>
-                    </div>
-                    {item.trendConnection && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <div className="idea-fl">Trend Connection</div>
-                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Facebook tab */}
-        {activePlatform === 'facebook' && (
-          <div>
-            {!result.platforms?.facebook?.length ? (
-              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>Facebook content generating...</p>
-            ) : result.platforms.facebook.map((item, i) => (
-              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div style={{ background: '#1877f2', borderRadius: '8px 8px 0 0', height: 6 }} />
-                <div className="idea-body">
-                  <div className="idea-num-col">
-                    <span className="idea-num">0{item.id}</span>
-                    <span className="idea-num-label">Post</span>
-                  </div>
-                  <div className="idea-content">
-                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.postTitle}</h3>
-                    <div className="idea-fields">
-                      <div>
-                        <div className="idea-fl">Post Body</div>
-                        <p className="idea-fd" style={{ whiteSpace: 'pre-line' }}>{item.postBody}</p>
-                      </div>
-                      <div>
-                        <div className="idea-fl">Engagement Question</div>
-                        <p className="idea-fd italic">{item.engagementQuestion}</p>
-                      </div>
-                    </div>
-                    {item.trendConnection && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <div className="idea-fl">Trend Connection</div>
-                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* TikTok tab */}
-        {activePlatform === 'tiktok' && (
-          <div>
-            {!result.platforms?.tiktok?.length ? (
-              <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12, padding: '32px 0' }}>TikTok content generating...</p>
-            ) : result.platforms.tiktok.map((item, i) => (
-              <div key={item.id} className="idea-card" style={{ animationDelay: `${i * 0.1}s` }}>
-                <div style={{ background: 'linear-gradient(90deg, #010101, #fe2c55)', borderRadius: '8px 8px 0 0', height: 6 }} />
-                <div className="idea-body">
-                  <div className="idea-num-col">
-                    <span className="idea-num">0{item.id}</span>
-                    <span className="idea-num-label">TikTok</span>
-                  </div>
-                  <div className="idea-content">
-                    <h3 className="idea-title" style={{ fontSize: 15 }}>{item.hook}</h3>
-                    <div className="idea-fields">
-                      <div>
-                        <div className="idea-fl">Video Concept</div>
-                        <p className="idea-fd">{item.concept}</p>
-                      </div>
-                      <div>
-                        <div className="idea-fl">Audio Direction</div>
-                        <p className="idea-fd italic">{item.audioSuggestion}</p>
-                      </div>
-                    </div>
-                    {item.trendConnection && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <div className="idea-fl">Trend Connection</div>
-                        <p style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-mono)', lineHeight: 1.6 }}>{item.trendConnection}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
       </div>
 
-      <div className="reset-wrap">
-        <button className="reset-btn" onClick={onReset}>← Analyse Another Channel</button>
+      {/* Feature preview */}
+      <div className="feature-row">
+        {PLATFORMS.map(p => (
+          <div key={p.id} className="feature-card">
+            <div className={`feature-icon ${p.short.toLowerCase()}`}>{p.short}</div>
+            <div className="feature-name">{p.label}</div>
+            <div className="feature-meta">5 IDEAS</div>
+          </div>
+        ))}
       </div>
-
-    </div>
+    </section>
   );
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function Home() {
+function HomeContent() {
   const [url, setUrl] = useState('');
   const [phase, setPhase] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [step, setStep] = useState(0);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState('');
+  const [platform, setPlatform] = useState<PlatformId>('youtube');
   const inputRef = useRef<HTMLInputElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const toast = React.useContext(ToastContext);
 
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
 
@@ -715,8 +605,10 @@ export default function Home() {
     }
   }, [result]);
 
-  const analyze = async () => {
-    if (!url.trim() || phase === 'loading') return;
+  const analyze = useCallback(async (override?: string) => {
+    const target = (override ?? url).trim();
+    if (!target || phase === 'loading') return;
+    setUrl(target);
     clearTimers();
     setPhase('loading');
     setStep(0);
@@ -727,16 +619,16 @@ export default function Home() {
       const id = setTimeout(fn, d);
       timers.current.push(id);
     };
-    addTimer(() => setStep(1), 5000);
-    addTimer(() => setStep(2), 12000);
-    addTimer(() => setStep(3), 22000);
-    addTimer(() => setStep(4), 35000);
+    addTimer(() => setStep(1), 6000);
+    addTimer(() => setStep(2), 14000);
+    addTimer(() => setStep(3), 24000);
+    addTimer(() => setStep(4), 38000);
 
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: target }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -744,90 +636,97 @@ export default function Home() {
         setPhase('error');
         return;
       }
-      setStep(4);
-      await new Promise(r => setTimeout(r, 600));
+      setStep(STEPS.length);
+      await new Promise(r => setTimeout(r, 500));
       setResult(data as AnalysisResult);
+      setPlatform('youtube');
       setPhase('done');
     } catch {
-      setError('Network error — is the server running?');
+      setError('Network error — try again');
       setPhase('error');
     } finally {
       clearTimers();
     }
-  };
+  }, [url, phase]);
 
   const reset = () => {
     setPhase('idle');
     setResult(null);
     setError('');
     setUrl('');
+    setPlatform('youtube');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => inputRef.current?.focus(), 200);
   };
 
-  return (
-    <div className="page">
+  // ─── Keyboard shortcuts ───────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
 
-      {/* Full-screen loading overlay */}
+      // ⌘K or / → focus input
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !inInput)) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+        return;
+      }
+
+      // 1–5 → switch platform (only when results shown)
+      if (!inInput && phase === 'done' && /^[1-5]$/.test(e.key)) {
+        const idx = parseInt(e.key) - 1;
+        setPlatform(PLATFORMS[idx].id);
+        toast(`Switched to ${PLATFORMS[idx].label}`);
+        return;
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [phase, toast]);
+
+  return (
+    <div className="page" data-platform={phase === 'done' ? platform : undefined}>
+
+      <TopNav onLogoClick={reset} onSearchClick={() => inputRef.current?.focus()} />
+
       {phase === 'loading' && <LoadingOverlay step={step} />}
 
-      {/* Hero */}
       {(phase === 'idle' || phase === 'error') && (
-        <section className="hero">
-          <div className="hero-grid" />
-          <div className="hero-glow" />
-          <div className="hero-eye">Content Intelligence Engine</div>
-          <h1 className="hero-title">IDEA<span>FORGE</span></h1>
-          <p className="hero-sub">
-            Analyse any YouTube channel. Get a full content pack — ideas for YouTube, Instagram,
-            LinkedIn, Facebook and TikTok, all grounded in this week&apos;s real news.
-          </p>
-          <div className="input-section">
-            <label className="input-label" htmlFor="channel-url">Channel Name or URL</label>
-            <div className="input-row">
-              <span className="input-prefix">🔍</span>
-              <input
-                ref={inputRef}
-                id="channel-url"
-                className="url-input"
-                type="text"
-                placeholder="e.g. MrBeast, Sehat Studio, or full URL"
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && analyze()}
-                autoFocus
-              />
-              <button
-                className="analyse-btn"
-                onClick={analyze}
-                disabled={!url.trim()}
-              >
-                ANALYSE
-              </button>
-            </div>
-            {error
-              ? <p className="input-error">⚠ {error}</p>
-              : <p className="input-hint">Type a channel name · paste a YouTube URL · either works</p>
-            }
-          </div>
-        </section>
+        <Hero
+          url={url}
+          setUrl={setUrl}
+          onAnalyse={() => analyze()}
+          error={error}
+          inputRef={inputRef}
+        />
       )}
 
-      <Ticker />
-
-      {/* Results */}
       {phase === 'done' && result && (
         <div ref={resultsRef}>
-          <ResultsView result={result} onReset={reset} />
+          <ResultsView
+            result={result}
+            onReset={reset}
+            platform={platform}
+            setPlatform={setPlatform}
+          />
         </div>
       )}
 
       {phase !== 'loading' && (
         <footer className="footer">
-          IDEAFORGE · YouTube · Instagram · LinkedIn · Facebook · TikTok · {new Date().getFullYear()}
+          IDEAFORGE · YOUTUBE · INSTAGRAM · TIKTOK · LINKEDIN · FACEBOOK · {new Date().getFullYear()}
         </footer>
       )}
 
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <ToastProvider>
+      <HomeContent />
+    </ToastProvider>
   );
 }
