@@ -182,6 +182,7 @@ export function Desk({
               role="tab"
               aria-selected={active === p.id}
               className="tab"
+              data-p={p.id}
               onClick={() => setActive(p.id)}
               title={`Shortcut: ${i + 1}`}
             >

@@ -30,11 +30,21 @@ function Sample() {
         Sample drafts for a made-up cooking channel. Yours will use your own thumbnails,
         your title style and what people are reading this week.
       </p>
-      <div className="sample-strip">
-        <YouTubeCard who={SAMPLE_WHO} title="I Cooked From a 1950s Ration Book for 7 Days" thumbnailText="7 days on rations" image={swatch('#7a4b2a', '#d9a066')} />
-        <ReelFrame who={SAMPLE_WHO} coverText="£1 dinner, honestly" caption="Lentils, one onion, a tin of tomatoes. I timed it: 22 minutes and it fed three of us." image={swatch('#3d5a40', '#a7c4a0')} />
-        <TikTokFrame who={SAMPLE_WHO} onScreenText="the onion trick nobody uses" hook="Stop crying over onions. Do this instead." sound="original sound" image={swatch('#2b2f4a', '#8c93c9')} />
-        <div style={{ width: 300, alignSelf: 'center' }}>
+      <div className="collage">
+        <div className="piece p-yt">
+          <span className="tape">YouTube</span>
+          <YouTubeCard who={SAMPLE_WHO} title="I Cooked From a 1950s Ration Book for 7 Days" thumbnailText="7 days on rations" image={swatch('#7a4b2a', '#d9a066')} />
+        </div>
+        <div className="piece p-ig">
+          <span className="tape">Reels</span>
+          <ReelFrame who={SAMPLE_WHO} coverText="£1 dinner, honestly" caption="Lentils, one onion, a tin of tomatoes. I timed it: 22 minutes and it fed three of us." image={swatch('#3d5a40', '#a7c4a0')} />
+        </div>
+        <div className="piece p-tt">
+          <span className="tape">TikTok</span>
+          <TikTokFrame who={SAMPLE_WHO} onScreenText="the onion trick nobody uses" hook="Stop crying over onions. Do this instead." sound="original sound" image={swatch('#2b2f4a', '#8c93c9')} />
+        </div>
+        <div className="piece p-li">
+          <span className="tape">LinkedIn</span>
           <LinkedInPost who={SAMPLE_WHO} opener="I spent a year cooking on £25 a week. The hardest part wasn't the money." body="It was planning. Here's the Sunday routine that made it work, and the three meals I'd keep forever." />
         </div>
       </div>
@@ -218,6 +228,18 @@ export default function Home() {
                 </p>
               </div>
             </section>
+
+            {sources && sources.length > 0 && (
+              <div className="ticker" aria-label="This week's headlines">
+                <div className="ticker-track">
+                  {[...sources, ...sources].map((s, i) => (
+                    <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" tabIndex={i < sources.length ? 0 : -1} aria-hidden={i >= sources.length}>
+                      <b>{s.kind === 'reddit' ? (s.subreddit ? `r/${s.subreddit}` : 'Reddit') : s.outlet}</b>{s.title}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {(phase === 'working' || error) && (
               <ul className="log" aria-live="polite">
