@@ -1,3 +1,9 @@
 {
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/analyze/route": "app/api/analyze/route.js",
+  "/api/thumbnail/route": "app/api/thumbnail/route.js",
+  "/icon.svg/route": "app/icon.svg/route.js",
+  "/opengraph-image/route": "app/opengraph-image/route.js",
   "/page": "app/page.js"
 }

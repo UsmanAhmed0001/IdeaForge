@@ -1,22 +1,35 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
+const SITE = process.env.SITE_URL || 'https://idea-forge-liart.vercel.app';
+
 export const metadata: Metadata = {
-  title: 'IDEAFORGE — YouTube Content Intelligence',
-  description: 'Analyze any YouTube channel and generate high-performance video ideas powered by AI.',
+  metadataBase: new URL(SITE),
+  title: 'IdeaForge: what to post this week',
+  description:
+    'Type a YouTube channel. IdeaForge reads its recent uploads, this week\'s news and Reddit, then drafts posts for YouTube, Instagram, TikTok, LinkedIn and Facebook.',
+  openGraph: {
+    title: 'What should you post this week?',
+    description: 'Drafts for five platforms, built from a channel\'s own style and this week\'s news.',
+    url: SITE,
+    siteName: 'IdeaForge',
+    type: 'website',
+  },
+  twitter: { card: 'summary_large_image' },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#eceef1' },
+    { media: '(prefers-color-scheme: dark)', color: '#1d1f23' },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Barlow:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en-GB">
       <body>{children}</body>
     </html>
   );
