@@ -55,6 +55,7 @@ Rules for every idea:
 - Every idea must sit squarely inside what this channel covers and what its audience comes for. A creator who makes these videos would say "yes, that's one of mine".
 - Use a source only when it genuinely fits the channel. Never build an idea around a source just because it's on the list. An idea with no source is fine; put [] in "sources".
 - Aim for a mix: some ideas riding this week's sources, some new angles on the topics behind their best performers.
+- A new angle must answer a clearly different question from the existing upload. "Hiccup remedies" after "How to get rid of hiccups" is a repeat; "Why hiccups won't stop for days and when to see a doctor" is a new angle.
 - Never write source ids inside the text.
 - "why" is one plain, honest sentence a creator would say out loud about why this is worth making now. If there is no news hook, say what makes it likely to land instead.
 - Each idea must be filmable by this creator with the setup their uploads already show.
@@ -112,7 +113,7 @@ Audience: ${profile.audience}
 Here are this week's news stories, Reddit threads and trending YouTube videos:
 ${sources.map(s => `${s.id}: ${s.title}`).join('\n')}
 
-Keep only the items this channel's viewers would genuinely care about AND that this creator could credibly make a video about, given what the channel covers. Be strict: drop anything off-topic, only loosely related, or that merely shares a keyword.
+Keep only the items this channel's viewers would genuinely care about AND that this creator could credibly make a video about, given what the channel covers. Be strict: drop anything off-topic, only loosely related, or that merely shares a keyword. Also drop anything whose title is in a language this channel's audience wouldn't read.
 Return {"keep": ["ids"]}`;
 }
 

@@ -47,7 +47,11 @@ async function complete(p: Provider, model: string, system: string, user: string
 
   const data = await res.json().catch(() => ({}));
   const err = Array.isArray(data) ? data[0]?.error : data?.error;
-  if (!res.ok) throw new Error(err?.message || `AI request failed (${res.status})`);
+  if (!res.ok) {
+    const e = new Error(err?.message || `AI request failed (${res.status})`) as Error & { busy?: boolean };
+    e.busy = res.status === 429 || res.status === 503;
+    throw e;
+  }
   const content: unknown = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) throw new Error('Empty model reply');
   return content;
@@ -78,13 +82,17 @@ export async function askJSON<T>(
   const p = provider();
   const attempts = p.models.flatMap((m, i) => (i === 0 ? [m, m] : [m]));
 
-  for (const model of attempts) {
+  for (const [i, model] of attempts.entries()) {
     try {
       const out = validate(parseJSON(await complete(p, model, system, user, temperature)));
       if (out) return out;
       lastError = `Unusable reply from ${model}`;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+      // Overloaded or rate-limited: wait before the next attempt instead of hitting it again straight away
+      if ((err as { busy?: boolean }).busy && i < attempts.length - 1) {
+        await new Promise(r => setTimeout(r, 1500 * (i + 1) + Math.random() * 1000));
+      }
     }
   }
   throw new Error(lastError);
