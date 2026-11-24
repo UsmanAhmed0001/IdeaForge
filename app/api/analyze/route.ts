@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { askJSON } from '@/lib/ai';
+import { askJSON, hasAIKey } from '@/lib/ai';
 import { resolveChannelId, fetchChannel } from '@/lib/youtube';
 import { fetchNews } from '@/lib/news';
 import { fetchReddit } from '@/lib/reddit';
@@ -17,7 +17,10 @@ export async function POST(req: NextRequest) {
   const { query } = await req.json().catch(() => ({ query: '' }));
   const input = typeof query === 'string' ? query.trim().slice(0, 200) : '';
 
-  const missing = ['YOUTUBE_API_KEY', 'OPENROUTER_API_KEY'].filter(k => !process.env[k]);
+  const missing = [
+    ...(process.env.YOUTUBE_API_KEY ? [] : ['YOUTUBE_API_KEY']),
+    ...(hasAIKey() ? [] : ['GEMINI_API_KEY']),
+  ];
   if (missing.length) return Response.json({ error: `Server is missing ${missing.join(', ')}.` }, { status: 500 });
   if (!input) return Response.json({ error: 'Type a channel name or paste a channel link.' }, { status: 400 });
 

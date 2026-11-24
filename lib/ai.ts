@@ -1,24 +1,37 @@
-// OpenRouter client. One pinned model (AI_MODEL) with a single fallback,
-// JSON-object output, and one retry when the reply doesn't parse or validate.
+// Talks to Gemini directly when GEMINI_API_KEY is set, otherwise to OpenRouter.
+// Both use the OpenAI-compatible chat format, JSON output, and one retry on a bad reply.
 
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-const DEFAULT_MODEL = 'google/gemini-2.5-flash';
-const FALLBACK_MODEL = 'openrouter/free';
+interface Provider { url: string; key: string; models: string[]; headers: Record<string, string> }
 
-function models(): string[] {
-  const primary = process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
-  return primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL];
-}
-
-async function complete(model: string, system: string, user: string, temperature: number): Promise<string> {
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
+function provider(): Provider {
+  const gemini = process.env.GEMINI_API_KEY?.trim();
+  if (gemini) {
+    const primary = process.env.AI_MODEL?.trim().replace(/^google\//, '') || 'gemini-2.5-flash';
+    return {
+      url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      key: gemini,
+      models: primary === 'gemini-2.5-flash-lite' ? [primary] : [primary, 'gemini-2.5-flash-lite'],
+      headers: {},
+    };
+  }
+  const primary = process.env.AI_MODEL?.trim() || 'google/gemini-2.5-flash';
+  return {
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: process.env.OPENROUTER_API_KEY || '',
+    models: primary === 'openrouter/free' ? [primary] : [primary, 'openrouter/free'],
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
       'HTTP-Referer': process.env.SITE_URL || 'https://idea-forge-liart.vercel.app',
       'X-Title': 'IdeaForge',
     },
+  };
+}
+
+export const hasAIKey = () => !!(process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY);
+
+async function complete(p: Provider, model: string, system: string, user: string, temperature: number): Promise<string> {
+  const res = await fetch(p.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${p.key}`, ...p.headers },
     body: JSON.stringify({
       model,
       temperature,
@@ -33,7 +46,8 @@ async function complete(model: string, system: string, user: string, temperature
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || `OpenRouter ${res.status}`);
+  const err = Array.isArray(data) ? data[0]?.error : data?.error;
+  if (!res.ok) throw new Error(err?.message || `AI request failed (${res.status})`);
   const content: unknown = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) throw new Error('Empty model reply');
   return content;
@@ -61,11 +75,12 @@ export async function askJSON<T>(
   temperature = 0.8,
 ): Promise<T> {
   let lastError = 'No reply';
-  const attempts = models().flatMap((m, i) => (i === 0 ? [m, m] : [m]));
+  const p = provider();
+  const attempts = p.models.flatMap((m, i) => (i === 0 ? [m, m] : [m]));
 
   for (const model of attempts) {
     try {
-      const out = validate(parseJSON(await complete(model, system, user, temperature)));
+      const out = validate(parseJSON(await complete(p, model, system, user, temperature)));
       if (out) return out;
       lastError = `Unusable reply from ${model}`;
     } catch (err) {
