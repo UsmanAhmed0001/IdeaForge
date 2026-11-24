@@ -6,11 +6,11 @@ interface Provider { url: string; key: string; models: string[]; headers: Record
 function provider(): Provider {
   const gemini = process.env.GEMINI_API_KEY?.trim();
   if (gemini) {
-    const primary = process.env.AI_MODEL?.trim().replace(/^google\//, '') || 'gemini-2.5-flash';
+    const primary = process.env.AI_MODEL?.trim().replace(/^google\//, '') || 'gemini-3.5-flash';
     return {
       url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       key: gemini,
-      models: primary === 'gemini-2.5-flash-lite' ? [primary] : [primary, 'gemini-2.5-flash-lite'],
+      models: [...new Set([primary, 'gemini-3.5-flash-lite'])],
       headers: {},
     };
   }

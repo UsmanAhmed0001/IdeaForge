@@ -96,3 +96,40 @@ export async function fetchChannel(channelId: string): Promise<{ channel: Channe
     videos,
   };
 }
+
+export interface NicheVideo { id: string; title: string; channel: string; channelId: string; publishedAt: string; views: number; thumbnail: string }
+
+/** The most-watched uploads from the last 7 days for each term. Each search costs 100 quota units. */
+export async function fetchNicheVideos(terms: string[], excludeChannelId: string, limit = 6): Promise<NicheVideo[]> {
+  const after = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const found = new Map<string, Omit<NicheVideo, 'views'>>();
+
+  await Promise.all(terms.slice(0, 2).map(async q => {
+    const d = await yt('search', {
+      part: 'snippet', type: 'video', order: 'viewCount', maxResults: '8',
+      publishedAfter: after, q, safeSearch: 'moderate',
+    }).catch(() => ({ items: [] }));
+    type Hit = { id: { videoId: string }; snippet: { title: string; channelTitle: string; channelId: string; publishedAt: string; thumbnails: YtThumbs } };
+    for (const h of (d.items || []) as Hit[]) {
+      if (!h.id?.videoId || h.snippet.channelId === excludeChannelId) continue;
+      found.set(h.id.videoId, {
+        id: h.id.videoId,
+        title: h.snippet.title.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+        channel: h.snippet.channelTitle,
+        channelId: h.snippet.channelId,
+        publishedAt: h.snippet.publishedAt,
+        thumbnail: bestThumb(h.snippet.thumbnails),
+      });
+    }
+  }));
+
+  if (!found.size) return [];
+  const st = await yt('videos', { part: 'statistics', id: [...found.keys()].slice(0, 50).join(',') }).catch(() => ({ items: [] }));
+  const views = new Map<string, number>((st.items || []).map((v: { id: string; statistics?: { viewCount?: string } }) => [v.id, Number(v.statistics?.viewCount || 0)]));
+
+  return [...found.values()]
+    .map(v => ({ ...v, views: views.get(v.id) || 0 }))
+    .filter(v => v.views >= 5_000)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, limit);
+}

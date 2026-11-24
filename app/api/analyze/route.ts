@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server';
 import { askJSON, hasAIKey } from '@/lib/ai';
-import { resolveChannelId, fetchChannel } from '@/lib/youtube';
+import { resolveChannelId, fetchChannel, fetchNicheVideos } from '@/lib/youtube';
 import { fetchNews } from '@/lib/news';
 import { fetchReddit } from '@/lib/reddit';
 import { getCached, setCached, rateLimit } from '@/lib/cache';
-import { SYSTEM, contextBlock, profilePrompt, validateProfile, platformPrompt, validatorFor } from '@/lib/prompts';
+import { SYSTEM, contextBlock, profilePrompt, validateProfile, platformPrompt, validatorFor, relevancePrompt, validateKeep } from '@/lib/prompts';
 import { PLATFORM_IDS, type Source, type StreamEvent } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -62,19 +62,34 @@ export async function POST(req: NextRequest) {
         send({ type: 'log', text: `Searching this week for: ${profile.searchTerms.join(', ')}` });
 
         // 3. Sources
-        const [news, threads] = await Promise.all([
+        const [news, threads, niche] = await Promise.all([
           fetchNews(profile.searchTerms).catch(() => []),
           fetchReddit(profile.searchTerms).catch(() => []),
+          fetchNicheVideos(profile.searchTerms, channelId).catch(() => []),
         ]);
-        const sources: Source[] = [
+        const found: Source[] = [
           ...news.map((n, i) => ({ id: `N${i + 1}`, kind: 'news' as const, title: n.title, outlet: n.outlet, url: n.url, date: n.date })),
           ...threads.map((t, i) => ({
             id: `R${i + 1}`, kind: 'reddit' as const, title: t.title, outlet: 'Reddit', subreddit: t.subreddit,
             url: t.url, date: t.date, score: t.score, comments: t.comments,
           })),
+          ...niche.map((v, i) => ({
+            id: `Y${i + 1}`, kind: 'youtube' as const, title: v.title, outlet: v.channel,
+            url: `https://www.youtube.com/watch?v=${v.id}`, date: v.publishedAt, views: v.views,
+          })),
         ];
+
+        // Drop anything this audience wouldn't care about before it can steer the ideas
+        send({ type: 'log', text: `Found ${found.length} items from the last 7 days, checking which fit ${channel.name}` });
+        let sources = found;
+        if (found.length) {
+          const keep = await askJSON(SYSTEM, relevancePrompt(channel, profile, found), validateKeep(new Set(found.map(s => s.id))), 0.2)
+            .catch(() => null);
+          if (keep) sources = found.filter(s => keep.includes(s.id));
+        }
         send({ type: 'sources', sources });
-        send({ type: 'log', text: `${news.length} headlines and ${threads.length} Reddit threads from the last 7 days` });
+        const count = (k: Source['kind']) => sources.filter(s => s.kind === k).length;
+        send({ type: 'log', text: `Kept ${count('news')} headlines, ${count('youtube')} trending videos and ${count('reddit')} Reddit threads` });
 
         // 4. All five platforms in parallel, each sent the moment it's ready
         const context = contextBlock(channel, videos, profile, sources);

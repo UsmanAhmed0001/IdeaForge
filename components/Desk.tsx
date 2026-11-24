@@ -36,6 +36,9 @@ function fmtDate(iso?: string) {
 }
 
 function sourceLine(s: Source) {
+  if (s.kind === 'youtube') {
+    return [s.outlet, s.views ? `${new Intl.NumberFormat('en-GB', { notation: 'compact' }).format(s.views)} views` : '', fmtDate(s.date)].filter(Boolean).join(', ');
+  }
   if (s.kind === 'reddit') {
     const bits = [s.subreddit ? `r/${s.subreddit}` : 'Reddit'];
     if (s.comments) bits.push(`${s.comments.toLocaleString('en-GB')} comments`);
@@ -171,6 +174,7 @@ export function Desk({
   const list = platforms[active];
   const news = sources.filter(s => s.kind === 'news');
   const threads = sources.filter(s => s.kind === 'reddit');
+  const trending = sources.filter(s => s.kind === 'youtube');
 
   return (
     <section className="desk">
@@ -212,6 +216,13 @@ export function Desk({
       </div>
 
       <aside className="side">
+        <h2>Getting views in your niche</h2>
+        {!sourcesReady ? <p className="empty">Searching</p> : trending.length ? (
+          <ol>{trending.map(s => (
+            <li key={s.id}><a className="src" href={s.url} target="_blank" rel="noopener noreferrer">{s.title}<span>{sourceLine(s)}</span></a></li>
+          ))}</ol>
+        ) : <p className="empty" style={{ marginBottom: 24 }}>No breakout videos on these topics this week.</p>}
+
         <h2>In the news this week</h2>
         {!sourcesReady ? <p className="empty">Searching</p> : news.length ? (
           <ol>{news.map(s => (

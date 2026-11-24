@@ -31,10 +31,11 @@ export interface Profile {
   angle: string;
 }
 
-/** A real, linkable item the ideas are allowed to cite. id is N1..N6 or R1..R6. */
+/** A real, linkable item the ideas are allowed to cite. id is N1.., R1.. or Y1.. */
 export interface Source {
   id: string;
-  kind: 'news' | 'reddit';
+  kind: 'news' | 'reddit' | 'youtube';
+  views?: number;
   title: string;
   outlet: string;
   subreddit?: string;

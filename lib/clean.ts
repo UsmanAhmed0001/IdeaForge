@@ -33,5 +33,5 @@ export function tidyHashtags(tags: string[]): string[] {
 
 /** Keep only source ids that actually exist. */
 export function validSources(ids: string[], known: Set<string>): string[] {
-  return [...new Set(ids.map(s => s.toUpperCase().replace(/[^NR0-9]/g, '')))].filter(id => known.has(id)).slice(0, 3);
+  return [...new Set(ids.map(s => s.toUpperCase().replace(/[^NRY0-9]/g, '')))].filter(id => known.has(id)).slice(0, 3);
 }

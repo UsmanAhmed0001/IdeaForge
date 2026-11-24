@@ -29,8 +29,9 @@ export function contextBlock(channel: Channel, videos: Video[], profile: Profile
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const uploads = videos.slice(0, 12).map(v => `- "${v.title}" (${v.views.toLocaleString('en-GB')} views)`).join('\n');
   const src = sources.length
-    ? sources.map(s => `${s.id}: ${s.title} (${s.kind === 'reddit' ? `r/${s.subreddit || 'reddit'}` : s.outlet}, ${fmtDate(s.date)})`).join('\n')
-    : 'None found this week. Base ideas on the channel\'s evergreen topics and say so in "why".';
+    ? sources.map(s => `${s.id}: ${s.title} (${s.kind === 'reddit' ? `r/${s.subreddit || 'reddit'}` : s.kind === 'youtube' ? `YouTube video by ${s.outlet}, ${(s.views || 0).toLocaleString('en-GB')} views` : s.outlet}, ${fmtDate(s.date)})`).join('\n')
+    : 'Nothing relevant this week.';
+  const best = [...videos].sort((a, b) => b.views - a.views).slice(0, 3).map(v => `"${v.title}"`).join(', ');
 
   return `Today is ${today}.
 
@@ -45,12 +46,17 @@ GAP IT FILLS: ${profile.angle}
 ALREADY PUBLISHED (do not repeat these topics; higher views show what lands):
 ${uploads}
 
-SOURCES FROM THE LAST 7 DAYS (cite by id, e.g. "N2" or "R1"):
+THEIR BEST PERFORMERS: ${best}
+
+WHAT'S HAPPENING THIS WEEK (N = news, R = Reddit, Y = YouTube videos in this niche getting views right now; cite by id):
 ${src}
 
 Rules for every idea:
-- Tie each idea to at least one source above when one fits. Put the ids in "sources". Never write ids inside the text.
-- "why" is one plain sentence a creator would say out loud about why this works this week.
+- Every idea must sit squarely inside what this channel covers and what its audience comes for. A creator who makes these videos would say "yes, that's one of mine".
+- Use a source only when it genuinely fits the channel. Never build an idea around a source just because it's on the list. An idea with no source is fine; put [] in "sources".
+- Aim for a mix: some ideas riding this week's sources, some new angles on the topics behind their best performers.
+- Never write source ids inside the text.
+- "why" is one plain, honest sentence a creator would say out loud about why this is worth making now. If there is no news hook, say what makes it likely to land instead.
 - Each idea must be filmable by this creator with the setup their uploads already show.
 - Write in the same language and mix the channel uses in its titles.
 - Viewers watch with captions from anywhere, so don't assume a country unless the channel does.
@@ -71,7 +77,7 @@ ${list}
 Return:
 {
   "topics": [4 to 6 specific subjects it covers, e.g. "dengue fever symptoms" not "health"],
-  "searchTerms": [3 short news-search phrases (2 to 4 words) that would find this week's stories this audience cares about],
+  "searchTerms": [3 search phrases (2 to 4 words) built from the specific topics above, the kind of phrase a news headline or a YouTube video about that exact subject would contain, e.g. "dengue outbreak" or "heartburn medication recall", never generic phrases like "health tips" or "home remedies"],
   "titleFormula": "the pattern their titles follow, with one real example from the list",
   "voice": "how they talk: tone, pacing, how they open videos, any language mix",
   "audience": "who watches, described by the problem they're trying to solve, not by country or language",
@@ -93,6 +99,29 @@ export function validateProfile(raw: unknown): Profile | null {
     audience: tidy(str(r.audience, 300)),
     format: tidy(str(r.format, 200)),
     angle: tidy(str(r.angle, 300)),
+  };
+}
+
+// ── Source filter: keep only what this channel's audience would care about ────
+
+export function relevancePrompt(channel: Channel, profile: Profile, sources: Source[]): string {
+  return `Channel: ${channel.name}
+Covers: ${profile.topics.join('; ')}
+Audience: ${profile.audience}
+
+Here are this week's news stories, Reddit threads and trending YouTube videos:
+${sources.map(s => `${s.id}: ${s.title}`).join('\n')}
+
+Keep only the items this channel's viewers would genuinely care about AND that this creator could credibly make a video about, given what the channel covers. Be strict: drop anything off-topic, only loosely related, or that merely shares a keyword.
+Return {"keep": ["ids"]}`;
+}
+
+export function validateKeep(known: Set<string>) {
+  return (raw: unknown): string[] | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const keep = (raw as Record<string, unknown>).keep;
+    if (!Array.isArray(keep)) return null;
+    return keep.map(k => String(k).toUpperCase().trim()).filter(k => known.has(k));
   };
 }
 

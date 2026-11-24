@@ -234,7 +234,7 @@ export default function Home() {
                 <div className="ticker-track">
                   {[...sources, ...sources].map((s, i) => (
                     <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" tabIndex={i < sources.length ? 0 : -1} aria-hidden={i >= sources.length}>
-                      <b>{s.kind === 'reddit' ? (s.subreddit ? `r/${s.subreddit}` : 'Reddit') : s.outlet}</b>{s.title}
+                      <b>{s.kind === 'reddit' ? (s.subreddit ? `r/${s.subreddit}` : 'Reddit') : s.kind === 'youtube' ? 'YouTube' : s.outlet}</b>{s.title}
                     </a>
                   ))}
                 </div>
