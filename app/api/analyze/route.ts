@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         send({ type: 'log', text: `Looking up "${input}"` });
         const channelId = await resolveChannelId(input);
 
-        const cached = getCached(channelId);
+        const cached = await getCached(channelId);
         if (cached) {
           send({ type: 'log', text: 'Using this channel\'s brief from earlier today' });
           for (const e of cached) send(e);
@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
           }
         }));
 
-        if (!sent.some(e => e.type === 'platform_error')) setCached(channelId, sent);
+        if (!sent.some(e => e.type === 'platform_error')) await setCached(channelId, sent);
         send({ type: 'done', cached: false });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Something went wrong.';

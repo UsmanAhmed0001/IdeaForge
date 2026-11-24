@@ -1,72 +1,50 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { generateThumbnail } from '@/lib/image';
+import { fingerprint, saveFile, storedUrl } from '@/lib/store';
+import { rateLimit } from '@/lib/cache';
 
-// Map video title keywords → Unsplash search terms
-function titleToKeywords(title: string): string {
-  const t = title.toLowerCase();
-  const kw: string[] = [];
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
-  if (t.match(/\b(ai|artificial intelligence|machine learning|gpt|neural|llm)\b/)) kw.push('artificial-intelligence', 'technology', 'futuristic');
-  if (t.match(/\b(camera|photo|photography|lens|sensor|megapixel)\b/)) kw.push('camera', 'photography', 'lens');
-  if (t.match(/\b(fold|foldable|flip|rollable)\b/)) kw.push('smartphone', 'technology', 'futuristic');
-  if (t.match(/\b(battery|charging|power|watt)\b/)) kw.push('technology', 'energy', 'power');
-  if (t.match(/\b(chip|processor|cpu|gpu|performance|benchmark|speed)\b/)) kw.push('circuit-board', 'technology', 'computing');
-  if (t.match(/\b(display|screen|oled|amoled|resolution|hz)\b/)) kw.push('screen', 'technology', 'display');
-  if (t.match(/\b(budget|cheap|price|value|affordable)\b/)) kw.push('smartphone', 'shopping', 'money');
-  if (t.match(/\b(5g|network|connectivity|wifi)\b/)) kw.push('network', 'technology', 'communication');
-  if (t.match(/\b(headset|vr|ar|mixed reality|vision)\b/)) kw.push('virtual-reality', 'futuristic', 'technology');
-  if (t.match(/\b(watch|wearable|fitness|band|tracker)\b/)) kw.push('smartwatch', 'wearable', 'fitness');
-  if (t.match(/\b(laptop|computer|mac|windows|pc)\b/)) kw.push('laptop', 'computer', 'technology');
-  if (t.match(/\b(review|test|compare|vs|versus|best|worst)\b/)) kw.push('smartphone', 'technology', 'review');
-  if (t.match(/\b(unbox|unboxing|hands.on|first look)\b/)) kw.push('unboxing', 'smartphone', 'technology');
-  if (t.match(/\b(future|upcoming|leak|rumor|concept|next)\b/)) kw.push('futuristic', 'technology', 'concept');
+// Same idea → same file. Kept in memory too for when no Blob store is connected.
+const memory = new Map<string, string>();
 
-  // Always include smartphone/tech as context for this type of channel
-  if (kw.length === 0) kw.push('smartphone', 'technology');
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
+  const thumbnailText = typeof body.thumbnailText === 'string' ? body.thumbnailText.trim().slice(0, 60) : '';
+  const concept = typeof body.concept === 'string' ? body.concept.trim().slice(0, 900) : '';
+  const channelFormat = typeof body.channelFormat === 'string' ? body.channelFormat.trim().slice(0, 200) : '';
+  const peek = body.peek === true;
 
-  // Unique keywords only, max 3
-  const unique = [...new Set(kw)].slice(0, 3);
-  return unique.join(',');
-}
+  if (!title) return Response.json({ error: 'Missing the video title.' }, { status: 400 });
 
-function strHash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return (h % 900) + 100;
-}
+  const id = fingerprint(title.toLowerCase(), thumbnailText.toLowerCase());
+  const pathname = `thumbs/${id}.png`;
 
-export async function GET(req: NextRequest) {
-  const raw = new URL(req.url).searchParams.get('prompt') || 'technology';
-  const keywords = titleToKeywords(raw);
-  const seed = strHash(raw);
+  // 1. Already made? Free.
+  const known = memory.get(id) || (await storedUrl(pathname));
+  if (known) {
+    memory.set(id, known);
+    return Response.json({ url: known, cached: true });
+  }
+  if (peek) return Response.json({ url: null });
 
-  // 1. Try Unsplash Source (free, no key, relevant photos)
+  // 2. Otherwise generate once, then keep it.
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+  const wait = rateLimit(ip, 'image');
+  if (wait) return Response.json({ error: `Thumbnail limit reached. Try again in ${Math.ceil(wait / 60)} min.` }, { status: 429 });
+
   try {
-    const unsplashUrl = `https://source.unsplash.com/featured/1280x720/?${encodeURIComponent(keywords)}`;
-    const res = await fetch(unsplashUrl, {
-      redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (res.ok) {
-      const buf = await res.arrayBuffer();
-      if (buf.byteLength > 5000) { // real image, not error page
-        return new NextResponse(buf, {
-          headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' },
-        });
-      }
-    }
-  } catch { /* fall through */ }
-
-  // 2. Picsum fallback (always works, seed = consistent per title)
-  try {
-    const res = await fetch(`https://picsum.photos/seed/${seed}/1280/720`);
-    if (res.ok) {
-      const buf = await res.arrayBuffer();
-      return new NextResponse(buf, {
-        headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' },
-      });
-    }
-  } catch { /* fall through */ }
-
-  return new NextResponse(null, { status: 404 });
+    const img = await generateThumbnail({ title, thumbnailText, concept, channelFormat });
+    const url = (await saveFile(pathname, img.data, img.mime)) || `data:${img.mime};base64,${img.data.toString('base64')}`;
+    if (memory.size > 300) memory.delete(memory.keys().next().value as string);
+    memory.set(id, url);
+    return Response.json({ url, cached: false });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Thumbnail failed.';
+    console.error('[thumbnail]', message);
+    return Response.json({ error: message }, { status: 502 });
+  }
 }

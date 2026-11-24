@@ -613,6 +613,7 @@ button { font: inherit; color: inherit; }
   filter: saturate(1.2) brightness(0.55);
 }
 
+
 .yt-thumb b {
   position: absolute;
   left: 6%;
@@ -635,6 +636,39 @@ button { font: inherit; color: inherit; }
 .yt-meta .av { width: 32px; height: 32px; }
 .yt-meta strong { font-size: 15px; line-height: 1.3; font-weight: 600; display: block; }
 .yt-meta span { font-size: 13px; color: var(--graphite); }
+
+/* Placeholder backgrounds until a thumbnail is generated */
+.yt-thumb[data-tint='0'], .phone[data-tint='0'] { background: linear-gradient(135deg, #1c2a4a, #0b1222); }
+.yt-thumb[data-tint='1'], .phone[data-tint='1'] { background: linear-gradient(135deg, #4a1c2a, #1a0910); }
+.yt-thumb[data-tint='2'], .phone[data-tint='2'] { background: linear-gradient(135deg, #1c4a33, #08180f); }
+.yt-thumb[data-tint='3'], .phone[data-tint='3'] { background: linear-gradient(135deg, #4a3a1c, #1a1208); }
+.yt-thumb[data-tint='4'], .phone[data-tint='4'] { background: linear-gradient(135deg, #3a1c4a, #12081a); }
+.yt-thumb.has-img img { filter: none; }
+.yt-thumb.has-img b { text-shadow: 0 3px 0 #000, 0 0 24px rgba(0, 0, 0, 0.85); }
+.yt-thumb.busy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.18) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.yt-busy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--marker);
+  color: #000;
+  font-size: 12px;
+  font-weight: 800;
+}
+.thumb-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; }
+.thumb-actions a.copy { text-decoration: none; display: inline-flex; align-items: center; }
+.thumb-actions .copy:disabled { opacity: 0.6; cursor: progress; }
+.thumb-error { font-size: 13px; color: var(--danger); max-width: 340px; }
 
 /* Phone-shaped frames for Reels and TikTok */
 .phone {

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { YouTubeCard, ReelFrame, TikTokFrame, LinkedInPost, FacebookPost, type Who } from './Frames';
 import type {
   PlatformId, PlatformIdeas, Source,
@@ -75,10 +75,43 @@ function Why({ why, ids, sources }: { why: string; ids: string[]; sources: Sourc
 
 // ── One row per idea, per platform ────────────────────────────────────────────
 
-function YouTubeRow({ idea, who, image, sources }: { idea: YouTubeIdea; who: Who; image?: string; sources: Source[] }) {
+function YouTubeRow({ idea, who, index, sources, channelFormat }: { idea: YouTubeIdea; who: Who; index: number; sources: Source[]; channelFormat: string }) {
+  const [thumb, setThumb] = useState<string | null>(null);
+  const [state, setState] = useState<'idle' | 'busy' | 'error'>('idle');
+  const [error, setError] = useState('');
+  const body = { title: idea.title, thumbnailText: idea.thumbnailText, concept: idea.concept, channelFormat };
+
+  // Show a thumbnail that was already made for this idea (no generation, no cost)
+  useEffect(() => {
+    let live = true;
+    fetch('/api/thumbnail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, peek: true }) })
+      .then(r => r.json()).then(d => { if (live && d.url) setThumb(d.url); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idea.title, idea.thumbnailText]);
+
+  const generate = async () => {
+    setState('busy'); setError('');
+    try {
+      const res = await fetch('/api/thumbnail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!res.ok || !d.url) throw new Error(d.error || 'Thumbnail failed.');
+      setThumb(d.url); setState('idle');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Thumbnail failed.'); setState('error');
+    }
+  };
+
   return (
     <article className="idea">
-      <YouTubeCard who={who} title={idea.title} thumbnailText={idea.thumbnailText} image={image} />
+      <div>
+        <YouTubeCard who={who} title={idea.title} thumbnailText={idea.thumbnailText} image={thumb || undefined} tint={index} busy={state === 'busy'} />
+        <div className="thumb-actions">
+          {!thumb && <button className="copy" onClick={generate} disabled={state === 'busy'}>{state === 'busy' ? 'Generating…' : 'Generate thumbnail'}</button>}
+          {thumb && <a className="copy" href={thumb} target="_blank" rel="noopener noreferrer" download>Open image</a>}
+          {state === 'error' && <p className="thumb-error">{error}</p>}
+        </div>
+      </div>
       <div className="notes">
         <div><span className="label">What happens</span><p>{idea.concept}</p></div>
         <Why why={idea.why} ids={idea.sources} sources={sources} />
@@ -91,11 +124,11 @@ function YouTubeRow({ idea, who, image, sources }: { idea: YouTubeIdea; who: Who
   );
 }
 
-function InstagramRow({ idea, who, image, sources }: { idea: InstagramIdea; who: Who; image?: string; sources: Source[] }) {
+function InstagramRow({ idea, who, index, sources }: { idea: InstagramIdea; who: Who; index: number; sources: Source[] }) {
   const tags = idea.hashtags.join(' ');
   return (
     <article className="idea">
-      <ReelFrame who={who} coverText={idea.coverText} caption={idea.caption} image={image} />
+      <ReelFrame who={who} coverText={idea.coverText} caption={idea.caption} tint={index + 1} />
       <div className="notes">
         <h3>{idea.hook}</h3>
         <div><span className="label">What to film</span><p>{idea.shot}</p></div>
@@ -110,10 +143,10 @@ function InstagramRow({ idea, who, image, sources }: { idea: InstagramIdea; who:
   );
 }
 
-function TikTokRow({ idea, who, image, sources }: { idea: TikTokIdea; who: Who; image?: string; sources: Source[] }) {
+function TikTokRow({ idea, who, index, sources }: { idea: TikTokIdea; who: Who; index: number; sources: Source[] }) {
   return (
     <article className="idea">
-      <TikTokFrame who={who} onScreenText={idea.onScreenText} hook={idea.hook} sound={idea.sound} image={image} />
+      <TikTokFrame who={who} onScreenText={idea.onScreenText} hook={idea.hook} sound={idea.sound} tint={index + 2} />
       <div className="notes">
         <h3>{idea.hook}</h3>
         <div>
@@ -159,10 +192,10 @@ function FacebookRow({ idea, who, sources }: { idea: FacebookIdea; who: Who; sou
 // ── The desk ──────────────────────────────────────────────────────────────────
 
 export function Desk({
-  who, images, platforms, failed, sources, sourcesReady, active, setActive,
+  who, channelFormat, platforms, failed, sources, sourcesReady, active, setActive,
 }: {
   who: Who;
-  images: string[];
+  channelFormat: string;
   platforms: Partial<PlatformIdeas>;
   failed: Partial<Record<PlatformId, string>>;
   sources: Source[];
@@ -170,7 +203,6 @@ export function Desk({
   active: PlatformId;
   setActive: (p: PlatformId) => void;
 }) {
-  const img = (i: number) => (images.length ? images[i % images.length] : undefined);
   const list = platforms[active];
   const news = sources.filter(s => s.kind === 'news');
   const threads = sources.filter(s => s.kind === 'reddit');
@@ -203,11 +235,11 @@ export function Desk({
           {!failed[active] && !list && <p className="pending">Writing {PLATFORMS.find(p => p.id === active)?.name} drafts</p>}
 
           {active === 'youtube' && (list as YouTubeIdea[] | undefined)?.map((idea, i) =>
-            <YouTubeRow key={i} idea={idea} who={who} image={img(i)} sources={sources} />)}
+            <YouTubeRow key={idea.title} idea={idea} who={who} index={i} sources={sources} channelFormat={channelFormat} />)}
           {active === 'instagram' && (list as InstagramIdea[] | undefined)?.map((idea, i) =>
-            <InstagramRow key={i} idea={idea} who={who} image={img(i + 1)} sources={sources} />)}
+            <InstagramRow key={i} idea={idea} who={who} index={i} sources={sources} />)}
           {active === 'tiktok' && (list as TikTokIdea[] | undefined)?.map((idea, i) =>
-            <TikTokRow key={i} idea={idea} who={who} image={img(i + 2)} sources={sources} />)}
+            <TikTokRow key={i} idea={idea} who={who} index={i} sources={sources} />)}
           {active === 'linkedin' && (list as LinkedInIdea[] | undefined)?.map((idea, i) =>
             <LinkedInRow key={i} idea={idea} who={who} sources={sources} />)}
           {active === 'facebook' && (list as FacebookIdea[] | undefined)?.map((idea, i) =>

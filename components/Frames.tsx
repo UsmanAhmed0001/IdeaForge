@@ -24,12 +24,15 @@ function ThumbText({ text }: { text: string }) {
   return <b>{words.join(' ')} <span className="hot">{last}</span></b>;
 }
 
-export function YouTubeCard({ who, title, thumbnailText, image }: { who: Who; title: string; thumbnailText: string; image?: string }) {
+export function YouTubeCard({ who, title, thumbnailText, image, tint = 0, busy = false }: {
+  who: Who; title: string; thumbnailText: string; image?: string; tint?: number; busy?: boolean;
+}) {
   return (
     <div className="yt">
-      <div className="yt-thumb">
+      <div className={`yt-thumb${image ? ' has-img' : ''}${busy ? ' busy' : ''}`} data-tint={tint % 5}>
         {image && <img src={image} alt="" />}
         {thumbnailText && <ThumbText text={thumbnailText} />}
+        {busy && <span className="yt-busy">Generating</span>}
       </div>
       <div className="yt-meta">
         <Avatar src={who.avatar} size={32} />
@@ -49,9 +52,9 @@ const Icon = {
   save: <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>,
 };
 
-function Phone({ image, top, children, rail }: { image?: string; top: ReactNode; children: ReactNode; rail: ReactNode[] }) {
+function Phone({ image, top, children, rail, tint = 0 }: { image?: string; top: ReactNode; children: ReactNode; rail: ReactNode[]; tint?: number }) {
   return (
-    <div className="phone">
+    <div className="phone" data-tint={tint % 5}>
       {image && <img src={image} alt="" />}
       <div className="chrome">{top}</div>
       {children}
@@ -60,9 +63,9 @@ function Phone({ image, top, children, rail }: { image?: string; top: ReactNode;
   );
 }
 
-export function ReelFrame({ who, coverText, caption, image }: { who: Who; coverText: string; caption: string; image?: string }) {
+export function ReelFrame({ who, coverText, caption, image, tint }: { who: Who; coverText: string; caption: string; image?: string; tint?: number }) {
   return (
-    <Phone image={image} top={<><span>Reels</span><span /></>} rail={[Icon.heart, Icon.comment, Icon.share, Icon.save]}>
+    <Phone image={image} tint={tint} top={<><span>Reels</span><span /></>} rail={[Icon.heart, Icon.comment, Icon.share, Icon.save]}>
       {coverText && <div className="cover">{coverText}</div>}
       <div className="bottom">
         <div className="who"><Avatar src={who.avatar} size={22} />{who.handle || who.name}</div>
@@ -72,10 +75,10 @@ export function ReelFrame({ who, coverText, caption, image }: { who: Who; coverT
   );
 }
 
-export function TikTokFrame({ who, onScreenText, hook, sound, image }: { who: Who; onScreenText: string; hook: string; sound: string; image?: string }) {
+export function TikTokFrame({ who, onScreenText, hook, sound, image, tint }: { who: Who; onScreenText: string; hook: string; sound: string; image?: string; tint?: number }) {
   const soundName = /original|voice|none/i.test(sound) ? `original sound, ${who.name}` : sound.split(/[.,]/)[0];
   return (
-    <Phone image={image} top={<><span>Following</span><span>For You</span></>} rail={[Icon.heart, Icon.comment, Icon.save, Icon.share]}>
+    <Phone image={image} tint={tint} top={<><span>Following</span><span>For You</span></>} rail={[Icon.heart, Icon.comment, Icon.save, Icon.share]}>
       {onScreenText && <div className="tt-text">{onScreenText}</div>}
       <div className="bottom">
         <div className="who">{who.handle || who.name}</div>

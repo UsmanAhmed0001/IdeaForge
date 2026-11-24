@@ -278,7 +278,7 @@ export default function Home() {
             {profile && (
               <Desk
                 who={{ name: channel.name, handle: channel.handle, avatar: channel.avatar }}
-                images={videos.map(v => v.thumbnail).filter(Boolean)}
+                channelFormat={profile.format}
                 platforms={platforms}
                 failed={failed}
                 sources={sources || []}

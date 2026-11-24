@@ -10,7 +10,8 @@ function provider(): Provider {
     return {
       url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
       key: gemini,
-      models: [...new Set([primary, 'gemini-3.5-flash-lite'])],
+      // A second model has its own capacity and rate limit, so it often works when the first is busy
+      models: [...new Set([primary, 'gemini-3.5-flash-lite', 'gemini-3.5-flash'])].slice(0, 2),
       headers: {},
     };
   }
@@ -48,8 +49,11 @@ async function complete(p: Provider, model: string, system: string, user: string
   const data = await res.json().catch(() => ({}));
   const err = Array.isArray(data) ? data[0]?.error : data?.error;
   if (!res.ok) {
-    const e = new Error(err?.message || `AI request failed (${res.status})`) as Error & { busy?: boolean };
+    const e = new Error(err?.message || `AI request failed (${res.status})`) as Error & { busy?: boolean; retryIn?: number };
     e.busy = res.status === 429 || res.status === 503;
+    // Google says how long to wait on a rate limit, e.g. "Please retry in 21.9s"
+    const hint = String(err?.message || '').match(/retry in ([\d.]+)s/i)?.[1];
+    if (hint) e.retryIn = Number(hint) * 1000;
     throw e;
   }
   const content: unknown = data?.choices?.[0]?.message?.content;
@@ -90,8 +94,11 @@ export async function askJSON<T>(
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       // Overloaded or rate-limited: wait before the next attempt instead of hitting it again straight away
-      if ((err as { busy?: boolean }).busy && i < attempts.length - 1) {
-        await new Promise(r => setTimeout(r, 1500 * (i + 1) + Math.random() * 1000));
+      const e = err as { busy?: boolean; retryIn?: number };
+      if (e.busy && i < attempts.length - 1) {
+        // Wait what Google asks for (capped so the request still finishes inside Vercel's 60s limit)
+        const wait = Math.min(e.retryIn ?? 1500 * (i + 1), 20_000) + Math.random() * 1000;
+        await new Promise(r => setTimeout(r, wait));
       }
     }
   }

@@ -1,33 +1,52 @@
-// In-memory cache and rate limit. Best-effort: each warm serverless instance
-// keeps its own copy. Swap for Upstash Redis when traffic justifies it.
+// Caching and rate limits.
+// Briefs: one per channel per day (UTC), kept in memory and in Vercel Blob,
+// so re-running a channel the same day makes no AI calls.
 
 import type { StreamEvent } from './types';
+import { readJSON, saveJSON } from './store';
 
-const RESULT_TTL = 6 * 60 * 60 * 1000; // 6 hours
-const results = new Map<string, { events: StreamEvent[]; at: number }>();
+const today = () => new Date().toISOString().slice(0, 10);
+const briefPath = (channelId: string) => `briefs/${channelId}/${today()}.json`;
 
-export function getCached(channelId: string): StreamEvent[] | null {
-  const hit = results.get(channelId);
-  if (!hit) return null;
-  if (Date.now() - hit.at > RESULT_TTL) { results.delete(channelId); return null; }
-  return hit.events;
+const memory = new Map<string, StreamEvent[]>();
+
+export async function getCached(channelId: string): Promise<StreamEvent[] | null> {
+  const key = briefPath(channelId);
+  const hit = memory.get(key);
+  if (hit) return hit;
+
+  const stored = await readJSON<StreamEvent[]>(key);
+  if (stored?.length) {
+    remember(key, stored);
+    return stored;
+  }
+  return null;
 }
 
-export function setCached(channelId: string, events: StreamEvent[]) {
-  if (results.size > 200) results.delete(results.keys().next().value as string);
-  results.set(channelId, { events, at: Date.now() });
+export async function setCached(channelId: string, events: StreamEvent[]) {
+  const key = briefPath(channelId);
+  remember(key, events);
+  await saveJSON(key, events);
 }
+
+function remember(key: string, events: StreamEvent[]) {
+  if (memory.size > 200) memory.delete(memory.keys().next().value as string);
+  memory.set(key, events);
+}
+
+// ── Rate limits (per server instance) ─────────────────────────────────────────
 
 const WINDOW = 10 * 60 * 1000; // 10 minutes
-const LIMIT = 8;
-const hits = new Map<string, number[]>();
+const buckets = new Map<string, number[]>();
 
 /** Returns seconds to wait, or 0 if allowed. */
-export function rateLimit(ip: string): number {
+export function rateLimit(ip: string, kind: 'brief' | 'image' = 'brief'): number {
+  const limit = kind === 'brief' ? 8 : 15;
+  const key = `${kind}:${ip}`;
   const now = Date.now();
-  const recent = (hits.get(ip) || []).filter(t => now - t < WINDOW);
-  if (recent.length >= LIMIT) return Math.ceil((WINDOW - (now - recent[0])) / 1000);
+  const recent = (buckets.get(key) || []).filter(t => now - t < WINDOW);
+  if (recent.length >= limit) return Math.ceil((WINDOW - (now - recent[0])) / 1000);
   recent.push(now);
-  hits.set(ip, recent);
+  buckets.set(key, recent);
   return 0;
 }
